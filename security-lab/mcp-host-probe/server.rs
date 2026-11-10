@@ -17,7 +17,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const URI: &str = "ui://sudo-relay-host-probe/inline-v5.html";
+const URI: &str = "ui://sudo-relay-host-probe/inline-v6.html";
 const COMMAND: &str = "/usr/bin/printf 'Receipt only; nothing executes\\n'";
 fn now() -> u64 {
     SystemTime::now()
@@ -260,7 +260,7 @@ impl ServerHandler for Server {
     fn get_info(&self) -> ServerInfo {
         ServerInfo { instructions:Some("Local receipt-only MCP Apps transport experiment. No commands execute. Never request real credentials. UI-only metadata and app-only tools are being tested, not assumed secure.".into()),
             capabilities:ServerCapabilities::builder().enable_tools().enable_resources().build(),
-            server_info:Implementation {name:"sudo-relay-host-probe".into(),version:"0.1.7".into(),..Default::default()},..Default::default() }
+            server_info:Implementation {name:"sudo-relay-host-probe".into(),version:"0.1.8".into(),..Default::default()},..Default::default() }
     }
     async fn list_resources(
         &self,

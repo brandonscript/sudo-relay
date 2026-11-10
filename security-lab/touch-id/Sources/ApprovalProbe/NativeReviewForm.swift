@@ -73,6 +73,7 @@ public final class NativeReviewForm: NSView {
     public func refresh(now: Int64) {
         let remaining = max(0, review.request.expiresAt - now)
         expiry.stringValue = remaining == 0 ? "Approval expired" : "Approve within \(remaining / 60):\(String(format: "%02d", remaining % 60))"
+        deny.title = remaining == 0 ? "Close" : "Deny"
         approve.isEnabled = now >= review.request.createdAt && now < review.request.expiresAt
         share.isEnabled = approve.isEnabled
     }

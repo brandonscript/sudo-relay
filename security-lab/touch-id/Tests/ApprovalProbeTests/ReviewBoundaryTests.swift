@@ -130,11 +130,13 @@ private func edit(_ bytes: Data, key: String, value: Any) throws -> Data {
     #expect(labels.contains("What you’re approving") && !labels.contains { $0.contains("Execution limit") })
     form.refresh(now: 1000)
     #expect(form.expiry.stringValue == "Approve within 5:00" && form.approve.isEnabled)
+    #expect(form.deny.title == "Deny")
     #expect(form.approve.keyEquivalent == "\r")
     form.refresh(now: 1299)
     #expect(form.expiry.stringValue == "Approve within 0:01" && form.approve.isEnabled)
     form.refresh(now: 1300)
     #expect(form.expiry.stringValue == "Approval expired" && !form.approve.isEnabled && !form.share.isEnabled)
+    #expect(form.deny.title == "Close" && form.deny.isEnabled)
     #expect(try review.reviewText().contains("Nonce:"))
 }
 

@@ -13,12 +13,12 @@ details{margin-top:18px;font-size:13px}summary{cursor:pointer;min-height:36px;al
 @media(max-width:380px){body{padding:4px}main{padding:16px}header{flex-wrap:wrap}#expiry{font-size:12px}.confirmation{padding:12px;gap:8px}.digits span{width:36px}}
 </style></head><body><main aria-labelledby="title">
 <header><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c3 2 5 3 8 3v6c0 5-4 8-8 10-4-2-8-5-8-10V6c3 0 5-1 8-3Z"/></svg><h1 id="title">Approval test</h1><span id="expiry" class="muted">Connecting…</span></header>
-<p id="machine" class="muted subtitle">Loading test target…</p>
+<div id="review-body"><p id="machine" class="muted subtitle">Loading test target…</p>
 <div class="reason"><span class="label">What you’re approving</span><p>Record a test approval in this chat. Nothing runs here.</p></div>
 <span class="label command-label">Example command · Not executed</span><pre id="command">Waiting for a test request…</pre>
 <details><summary>Test details</summary><p>This experiment does not connect to sudo or the broker. Possession of its test capability can create a receipt; that does not prove a person approved.</p><p>UI-only canary: <code id="canary"></code></p><small>Do not copy this into chat during a visibility test. The server creates a fresh one per request.</small><p>Request: <code id="request-id"></code></p><p>Digest: <code id="digest"></code></p><p>Server instance: <code id="instance"></code></p></details>
 <p class="muted sharing">Output sharing is off for this test.</p>
 <form id="form"><div class="confirmation"><label for="number">Type <strong id="challenge">—</strong> to confirm</label><div class="digits"><span id="digit-first" aria-hidden="true">·</span><span id="digit-second" aria-hidden="true">·</span><input id="number" inputmode="numeric" autocomplete="off" pattern="[0-9]{2}" maxlength="2" required disabled aria-describedby="status"></div></div>
 <div class="actions"><button id="approve" type="submit" disabled>Approve once</button><button id="deny" type="button" disabled>Deny</button></div></form>
-<p id="status" role="status" aria-live="polite">Connecting to the chat host…</p>
+</div><p id="status" role="status" aria-live="polite">Connecting to the chat host…</p>
 </main><!-- APPROVAL_SCRIPT --></body></html>

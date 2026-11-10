@@ -87,7 +87,7 @@ test('Host probe: host theme and narrow layout keep the command and controls vis
   await expect(card.locator('html')).toHaveAttribute('data-theme', 'light');
   expect(await card.locator('.digits').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(255, 255, 255)');
 });
-test('Host probe: countdown expiry disables both decisions without sending a receipt', async ({ page }) => {
+test('Host probe: expiry disables approval and Close dismisses locally without a decision', async ({ page }) => {
   await page.clock.install();
   await setup(page);
   const card = page.frameLocator('iframe');
@@ -97,6 +97,14 @@ test('Host probe: countdown expiry disables both decisions without sending a rec
   await page.clock.fastForward(301_000);
   await expect(card.locator('#expiry')).toHaveText('Expired');
   await expect(card.getByRole('button', { name: 'Approve once' })).toBeDisabled();
-  await expect(card.getByRole('button', { name: 'Deny' })).toBeDisabled();
+  await expect(card.getByRole('button', { name: 'Deny', exact: true })).toHaveCount(0);
+  await expect(card.getByRole('button', { name: 'Close', exact: true })).toBeEnabled();
+  await card.locator('#form').evaluate(form => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+  expect(await page.locator('#calls').innerText()).toBe('[]');
+  await card.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(card.locator('#review-body')).toBeHidden();
+  await expect(card.getByRole('status')).toHaveText('Expired. Nothing was approved.');
+  await page.clock.fastForward(2_000);
+  await expect(card.getByRole('status')).toHaveText('Expired. Nothing was approved.');
   expect(await page.locator('#calls').innerText()).toBe('[]');
 });

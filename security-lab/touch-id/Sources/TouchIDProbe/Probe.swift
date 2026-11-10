@@ -51,6 +51,7 @@ struct Probe {
             }
         } catch {
             print("Experiment stopped without further attempts: \(errorSummary(error))")
+            if isAuthenticationCancellation(error) { exit(1) }
             notice("Experiment stopped", "No command ran. No fallback was attempted.\n\(errorSummary(error))")
             exit(1)
         }

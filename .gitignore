@@ -6,3 +6,4 @@ ui/dist/
 *.pem
 .DS_Store
 /security-lab/evidence/
+/backlog.md

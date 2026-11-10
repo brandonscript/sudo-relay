@@ -14,7 +14,7 @@ function element<T extends HTMLElement>(id: string): T {
   if (!value) throw new Error(`Missing element: ${id}`);
   return value;
 }
-const app = new App({ name: 'sudo-relay-host-probe', version: '0.1.7' }, { availableDisplayModes: ['inline'] });
+const app = new App({ name: 'sudo-relay-host-probe', version: '0.1.8' }, { availableDisplayModes: ['inline'] });
 const input = element<HTMLInputElement>('number');
 const approve = element<HTMLButtonElement>('approve');
 const deny = element<HTMLButtonElement>('deny');
@@ -32,7 +32,8 @@ function update(): void {
   if (pending) element('expiry').textContent = remainingTime(pending.expires);
   const available = !!pending && Date.now() < pending.expires * 1000 && !busy;
   approve.disabled = !available || input.value !== pending?.number;
-  deny.disabled = !available;
+  deny.disabled = !pending || busy;
+  if (pending) deny.textContent = Date.now() >= pending.expires * 1000 ? 'Close' : 'Deny';
   input.disabled = !available;
   if (pending && Date.now() >= pending.expires * 1000) status.textContent = 'Expired. Ask for a new test request.';
 }
@@ -53,6 +54,7 @@ function show(value: unknown, metadata: unknown): void {
   element('canary').textContent = string(hidden.canary);
   element('challenge').textContent = string(hidden.number);
   pending = { id, capability: string(hidden.capability), number: string(hidden.number), expires: request.expires_at };
+  element('review-body').hidden = false;
   approve.textContent = 'Approve once'; deny.textContent = 'Deny'; approve.hidden = false; deny.hidden = false;
   delete approve.dataset.decided; delete deny.dataset.decided;
   input.value = ''; busy = false; status.textContent = 'Ready. This records a receipt only.'; update();
@@ -88,7 +90,16 @@ async function decide(approved: boolean): Promise<void> {
 }
 input.addEventListener('input', () => { input.value = input.value.replace(/[^0-9]/g, '').slice(0, 2); update(); });
 element<HTMLFormElement>('form').addEventListener('submit', event => { event.preventDefault(); void decide(true); });
-deny.addEventListener('click', () => { void decide(false); });
+deny.addEventListener('click', () => {
+  if (pending && !busy && Date.now() >= pending.expires * 1000) {
+    pending = undefined;
+    element('review-body').hidden = true;
+    status.textContent = 'Expired. Nothing was approved.';
+    update();
+    return;
+  }
+  void decide(false);
+});
 setInterval(update, 1000);
 update();
 void app.connect().then(() => {

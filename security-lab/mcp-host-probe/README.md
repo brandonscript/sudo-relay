@@ -132,3 +132,7 @@ The user confirmed the 0.1.5 background in the live inline card and requested 10
 ### Target subtitle (0.1.7)
 
 Both the inline and native review now show `machine · OS version · account`. The local fixture uses `local-receipt-lab` and `test-user`, with the actual local OS version (macOS product version or Linux distribution PRETTY_NAME). This is test identity, not sponsoring-account enrollment. It never calls a command to discover that information. The native request signs those fields; the inline capability probe freezes them into its request digest. Production must obtain the true sponsor from protected enrollment, never a caller's display label. The inline resource is `inline-v5.html`; refresh the plugin connection to see new cards.
+
+## Expired review dismissal (0.1.8)
+
+At expiry, approval stays disabled and Deny becomes Close. Close collapses the review inside its inline card and leaves an Expired status; it does not remove the chat message or call an approval/cancellation tool. Six browser checks pass, including expiry, rejected form submission and local dismissal with no server calls. Version 0.1.8 uses a new resource URI so a refreshed connection can load the updated card. Live desktop appearance remains to be checked.

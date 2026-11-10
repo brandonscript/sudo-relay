@@ -54,7 +54,8 @@ extension Probe {
         let panel = try NativeReviewPanel(review: review)
         guard panel.runReview() else {
             verifier.deny()
-            FileHandle.standardOutput.write(Data("Review denied: zero receipts; nothing executed.\n".utf8))
+            let outcome = now() >= review.request.expiresAt ? "expired" : "denied"
+            FileHandle.standardOutput.write(Data("Review \(outcome): zero receipts; nothing executed.\n".utf8))
             return
         }
         // Freeze the selected decision before requesting OS authentication. No mutable UI data enters signing afterward.
@@ -69,6 +70,9 @@ extension Probe {
             FileHandle.standardOutput.write(Data("Review receipt verified: \(receipt.id); digest \(receipt.decisionDigest); share output \(receipt.shareOutput); replay rejected; nothing executed.\n".utf8))
         } catch {
             verifier.deny()
+            if isAuthenticationCancellation(error) {
+                FileHandle.standardOutput.write(Data("Authentication cancelled: zero receipts; nothing executed; no fallback.\n".utf8))
+            }
             throw error
         }
     }

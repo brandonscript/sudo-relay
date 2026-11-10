@@ -1,5 +1,11 @@
 import CryptoKit
 import Foundation
+import LocalAuthentication
+
+public func isAuthenticationCancellation(_ error: Error) -> Bool {
+    let error = error as NSError
+    return error.domain == LAError.errorDomain && error.code == LAError.Code.userCancel.rawValue
+}
 
 // Authentication errors can include biometric configuration metadata in userInfo.
 public func errorSummary(_ error: Error) -> String {

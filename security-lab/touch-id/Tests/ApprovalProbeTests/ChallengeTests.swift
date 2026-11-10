@@ -1,7 +1,16 @@
 import ApprovalProbe
 import CryptoKit
 import Foundation
+import LocalAuthentication
 import Testing
+
+@Test func onlyExplicitAuthenticatorCancellationSuppressesTheErrorNotice() {
+    #expect(isAuthenticationCancellation(NSError(domain: LAError.errorDomain, code: LAError.Code.userCancel.rawValue)))
+    for code in [LAError.Code.authenticationFailed, .systemCancel, .appCancel, .biometryLockout] {
+        #expect(!isAuthenticationCancellation(NSError(domain: LAError.errorDomain, code: code.rawValue)))
+    }
+    #expect(!isAuthenticationCancellation(NSError(domain: "unrelated", code: LAError.Code.userCancel.rawValue)))
+}
 
 @Test func errorReportingOmitsAuthenticationMetadata() {
     let error = NSError(domain: "com.apple.LocalAuthentication", code: -1004, userInfo: [
