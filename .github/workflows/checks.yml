@@ -43,6 +43,7 @@ jobs:
         working-directory: ui
       - run: cargo build --locked --features host-probe --bin mcp-host-probe
       - run: python3 security-lab/mcp-host-probe/check.py
+      - run: python3 security-lab/mcp-host-probe/package.py
       - run: node --import ./ui/node_modules/tsx/dist/loader.mjs scripts/integration.mts --boundary-only
       - run: node --import ./ui/node_modules/tsx/dist/loader.mjs scripts/integration.mts
   privileged:

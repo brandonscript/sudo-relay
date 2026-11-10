@@ -17,7 +17,9 @@ python3 security-lab/mcp-host-probe/check.py
 python3 security-lab/mcp-host-probe/package.py
 ```
 
-The last command prints a new temporary marketplace directory. It contains only the probe binary, bundled card, two manifests, marketplace catalogue and SHA-256 checksums. It registers nothing. The binary is built for this computer; rebuild on another OS or architecture. This optional binary is excluded from default Cargo builds.
+The last command prints a new temporary marketplace directory. It contains only the probe binary, bundled card, two manifests, marketplace catalogue and SHA-256 checksums. It registers nothing. The binary and launcher are built for this computer/account; regenerate the package on another computer, account, or `CODEX_HOME`. This optional binary is excluded from default Cargo builds.
+
+The local fixture uses `.codex-plugin/plugin.json` with an explicit `mcpServers: "./.mcp.json"` reference. Its launcher contains absolute paths to this version's installed Codex cache. The tested loader did not discover the portable package's server, and then failed to resolve `${PLUGIN_ROOT}` in the compatibility launcher. Do not rename its marketplace or manually relocate the installed copy without regenerating the launcher. This is a local experiment, not a portable release package.
 
 Register the printed directory:
 
@@ -31,9 +33,12 @@ For **Codex desktop**, install the plugin from **sudo-relay lab** in the plugin 
 ```sh
 codex plugin add sudo-relay-host-probe@sudo-relay-lab
 codex plugin list --marketplace sudo-relay-lab --json
+python3 security-lab/mcp-host-probe/check-loader.py /absolute/path/printed/above
 ```
 
 Restart the desktop app if its running conversation has not loaded the new plugin. Enable the plugin in a local conversation and ask it to call `new_probe`. CLI installation does not prove the running conversation has its tools or can render its card. If tools remain unavailable, record that prerequisite as blocked.
+
+`check-loader.py` starts a temporary Codex backend, reads only this plugin's metadata and MCP tool inventory, and exits without creating a chat or request. It fails if the server is absent, cannot start, or returns the wrong tools. The CLI/backend version tested is 0.167.0. Its startup may require running outside a restricted process sandbox, still as the ordinary account. This checks the loader, not the active desktop conversation or UI.
 
 **ChatGPT desktop is a separate host target.** Confirm which app is in use before installation; a Codex CLI registration is not verification that ChatGPT sees it. Follow that host's current local-plugin setup and record its version. If its source or card does not appear, stop rather than transferring Codex results. Do not substitute an ordinary browser page and call it a desktop MCP result.
 
@@ -61,6 +66,7 @@ Only one request may be pending. Requests expire after five minutes; three wrong
 | Concurrent/sequential replay | Rust concurrent-call test and real stdio check |
 | Public results exclude canary/capability/number | Rust serialization check and real stdio check |
 | App-only metadata, UI resource and four tool schemas | Real stdio check; host enforcement still unverified |
+| Installed plugin declares a server and that server starts with all four tools | `check-loader.py`, using the installed Codex CLI; separate from host UI tests |
 | Enter, wrong code, terminal button states, malformed metadata, server rejection | Four browser tests with a synthetic MCP Apps bridge |
 | Fresh raw capability holder can approve | Expected limitation reproduced by Rust and stdio tests |
 | Actual desktop model filtering, UI access and permission settings | Requires the manual session above |
@@ -76,6 +82,8 @@ November 10, 2026, local macOS: five Rust checks, the real stdio protocol check,
 The new rendered-card test first failed because the shared HTML bundler interpreted JavaScript `$` sequences as replacement patterns. Switching to a replacement callback fixed the embedded script; all four card tests then passed. All five [CI jobs for the probe](https://github.com/brandonscript/sudo-relay/actions/runs/42885322952) passed, including all 23 browser cases and the Linux/macOS protocol checks.
 
 The local marketplace was registered but did not appear in the user's picker. An attempted CLI installation was rejected by approval review because the stated target was ChatGPT while the CLI targets Codex. The user then explicitly selected **Codex — install and test the receipt-only plugin here**. Installation succeeded, and the CLI reported the plugin installed and enabled; all four installed artifacts matched the package checksums. The running conversation still did not expose its tools. Desktop UI inspection was refused by the computer-use tool for this app. That refusal is **NOT RUN**, not proof that the host's card is isolated. Loading the plugin into a conversation and the real-host positive control remain pending.
+
+Subsequent loader diagnosis found two packaging failures missed by the installation check. Version 0.1.0 was listed as installed but `plugin/read` returned `mcpServers: []`. The compatibility package (0.1.1) exposed `host-probe`, but `mcpServerStatus/list` reported startup failure with `No such file or directory`. Version 0.1.2 uses the compatibility manifest and explicit installed-cache paths. The same loader then returned all four tools with `toolsError: null`; the saved regression check passed. No request or receipt was created by these diagnostics. Live conversation tool availability and card approval are still unverified.
 
 ## Remove it
 
