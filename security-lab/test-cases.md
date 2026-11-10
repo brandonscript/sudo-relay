@@ -121,3 +121,7 @@ Run these cases only in disposable machines with fake accounts and credentials. 
 - For launch through native sudo: revoke permission at the launch barrier and verify sudo denies execution. Verify authentication occurs only through the trusted human host and secrets never enter MCP messages, output capture, logs or the agent's process environment.
 - If a check-then-launch implementation is selected instead: demonstrate and document its residual race; never describe it as atomic revocation enforcement.
 - Measure request and launch policy-check latency with allowed and denied commands, without caching authorization across requests. Record OS, sudo version, policy backend and percentile timings.
+
+### Native sudo prototype result
+
+An isolated Linux experiment now covers signed one-use PAM authentication, two sponsor identities and native sudo attribution, revocation between signing and launch, exact command-policy denial, absent/invalid/expired/mismatched approvals, cross-process replay, consumed nonce reuse, lack of reusable authentication, and signer-key/grant access denial. All nine cases passed. Source and exact exclusions: [prototype test record](https://github.com/brandonscript/sudo-relay/tree/4b86659/security-lab/sudo-prototype). This is separate from the production broker; the planned enrollment/integration cases above are still pending.
