@@ -79,6 +79,6 @@ C1 and S1 are characterization tests: their passing result means the limitation 
 
 November 10, 2026: all **16 cases passed in 7.2 seconds** on local macOS arm64, Node 24.16.0, Playwright 1.65.0 and Chromium 158.0.8127.18. Strict TypeScript checking passed. The new package's `npm audit` reported zero known vulnerabilities after replacing the initially selected Zod version; this is not a dependency audit of the entire repository. Browser tests needed to run outside the process sandbox because macOS denied Chromium's bootstrap IPC.
 
-The workflow includes a Linux browser-test job; hosted execution has not yet been verified for this change. No root command was launched. Real authenticator gestures, ChatGPT handoff, mobile use, production enrollment and the native sudo path remain untested here.
+All five [GitHub CI jobs](https://github.com/brandonscript/sudo-relay/actions/runs/42868522346) passed for commit `0becec2`, including the new Linux browser job and the existing Linux/macOS checks and privileged broker fixtures. The approval experiment itself launched no command. The pre-existing privileged jobs are separate broker tests on disposable hosted runners, not a passkey-to-root integration. Real authenticator gestures, ChatGPT handoff, mobile use, production enrollment and the native sudo path remain untested here.
 
 The [design document](../../docs/chat-approval-design.md) describes how these findings affect implementation. Passkeys remain optional; claims about protection must match the selected mode.
