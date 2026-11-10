@@ -64,3 +64,7 @@ Fifteen local tests passed, including four new gate tests covering passwordless-
 For the next design session: authenticated installer provenance and per-sudoer enrollment; integration of this gate with the real broker's CBOR approvals, scripts, audit and output sharing; and the protected chat signing host. Those three items remain open. No host authentication configuration was changed.
 
 The [November 10 chat approval research and design](chat-approval-design.md) proposes an unprivileged passkey experiment first, documents the potential separate-page requirement, and lists unrun host acceptance tests. It does not resolve these blockers.
+
+## Native review work in progress
+
+The [receipt-only native review lab](native-review-boundary.md) now authenticates the request before rendering, freezes the complete output-sharing decision before signing, and checks that decision against a separately retained request and key before one-use consumption. Ten native protocol/UI tests passed with disposable software keys. The participant screenshot and process output also confirmed one native Touch ID receipt with replay rejected. This does not close blocker 3: protected installation, key enrollment, process/IPC isolation and real host integration remain open; the trial has no execution path.

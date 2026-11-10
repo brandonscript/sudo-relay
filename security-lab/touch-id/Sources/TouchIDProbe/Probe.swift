@@ -20,8 +20,8 @@ struct Probe {
 
     static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())
-        guard arguments == ["--check"] || arguments == ["--run"] else {
-            print("Use --check for capability only, or --run for two human-confirmed signing trials.")
+        guard arguments == ["--check"] || arguments == ["--run"] || arguments == ["--review-boundary"] else {
+            print("Use --check for capability only, --run for two signing trials, or --review-boundary for one authenticated native review.")
             exit(2)
         }
         guard getuid() != 0 else { print("Run as an ordinary user."); exit(2) }
@@ -34,7 +34,7 @@ struct Probe {
         print("Touch ID reported: \(touchID)")
         if let error { print("Capability result: \(errorSummary(error))") }
         capability.invalidate()
-        guard arguments == ["--run"] else { return }
+        guard arguments != ["--check"] else { return }
         guard available, SecureEnclave.isAvailable, touchID else {
             print("Touch ID test unavailable; no key created and no fallback attempted.")
             exit(1)
@@ -43,8 +43,12 @@ struct Probe {
         app.setActivationPolicy(.regular)
         app.activate(ignoringOtherApps: true)
         do {
-            try run()
-            notice("Two signatures verified", "Nothing executed. Tell the researcher whether each request prompted for Touch ID.")
+            if arguments == ["--review-boundary"] {
+                try runReviewTrial()
+            } else {
+                try run()
+                notice("Two signatures verified", "Nothing executed. Tell the researcher whether each request prompted for Touch ID.")
+            }
         } catch {
             print("Experiment stopped without further attempts: \(errorSummary(error))")
             notice("Experiment stopped", "No command ran. No fallback was attempted.\n\(errorSummary(error))")
@@ -63,43 +67,13 @@ struct Probe {
             review.addButton(withTitle: "Sign test request")
             review.addButton(withTitle: "Cancel")
             guard review.runModal() == .alertFirstButtonReturn else { throw ProbeError.cancelled }
-            if keyData == nil {
-                var error: Unmanaged<CFError>?
-                guard let access = SecAccessControlCreateWithFlags(
-                    nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-                    [.privateKeyUsage, .biometryCurrentSet], &error
-                ) else {
-                    if let error { throw error.takeRetainedValue() }
-                    throw ProbeError.invalidAccessControl
-                }
-                let creation = context()
-                creation.interactionNotAllowed = true
-                defer { creation.invalidate() }
-                keyData = try SecureEnclave.P256.Signing.PrivateKey(
-                    accessControl: access, authenticationContext: creation
-                ).dataRepresentation
-            }
+            if keyData == nil { keyData = try makeBiometricKey() }
             guard let keyData else { throw ProbeError.unavailable }
-
-            let blocked = context()
-            blocked.interactionNotAllowed = true
-            do {
-                let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: keyData, authenticationContext: blocked)
-                _ = try key.signature(for: bytes)
-                blocked.invalidate()
-                throw ProbeError.noninteractiveSigningSucceeded
-            } catch ProbeError.noninteractiveSigningSucceeded {
-                throw ProbeError.noninteractiveSigningSucceeded
-            } catch {
-                print("Test \(sequence): noninteractive attempt produced no signature (\(errorSummary(error))).")
-            }
-            blocked.invalidate()
-
-            let approval = context()
-            approval.localizedReason = "Sign sudo-relay harmless test \(sequence) of 2"
-            defer { approval.invalidate() }
-            let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: keyData, authenticationContext: approval)
-            let signature = try key.signature(for: bytes)
+            let signature = try signWithBiometrics(bytes, keyData: keyData, reason: "Sign sudo-relay harmless test \(sequence) of 2")
+            let lookup = context()
+            lookup.interactionNotAllowed = true
+            defer { lookup.invalidate() }
+            let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: keyData, authenticationContext: lookup)
             guard try challenge.verify(signature, key: key.publicKey) else { throw ProbeError.invalidSignature }
             print("Test \(sequence): signature verified; nothing executed.")
         }

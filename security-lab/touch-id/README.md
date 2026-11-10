@@ -56,3 +56,11 @@ swift test --disable-sandbox \
 ```
 
 This disables SwiftPM's manifest sandbox for this local package; it does not change system authentication. Run the resulting `.build/debug/touch-id-probe` (or the scratch directory's `debug/touch-id-probe`) with `--check` or `--run`.
+
+## Authenticated native review trial
+
+`touch-id-probe --review-boundary` adds a receipt-only authority → native review → signature → verification flow. Review data is authority-authenticated before display; the complete request and selected output choice are bound to the signature. The verifier uses its own request/key and accepts one receipt. The [design, test cases and manual runbook](../../docs/native-review-boundary.md) separate what this tests from the missing protected deployment. No command runs, and the existing inline probe is unchanged.
+
+Seven new automated cases cover native layout/command rendering, authority forgery, misleading input, request/choice/mode substitution, wrong keys, concurrent replay, cross-enrollment reuse, denial and late signatures. Together with the three original native checks, ten tests passed locally. Software-key tests do not exercise biometrics. After correcting layout and async lifecycle issues, both the participant screenshot and process output confirmed a real native review/Touch ID receipt with replay rejected; see the runbook for evidence and remaining negative hardware checks. The simplified Touch ID review no longer requires number entry; technical data is available under Details.
+
+The new native flow closes after successful verification or denial. It does not add a success dialog; the process records receipt evidence. The original `--run` two-trial experiment retains its final researcher notice. Errors remain visible and never trigger a fallback.

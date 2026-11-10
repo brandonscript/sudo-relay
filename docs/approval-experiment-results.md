@@ -25,3 +25,7 @@ The next implementation decision is the trusted review boundary. A native helper
 Production integration still needs authenticated sponsor enrollment, a versioned verification format for WebAuthn/P-256 alongside the existing Ed25519 format, protected policy and recovery, native sudo policy enforcement, and real desktop/mobile handoff tests. The [production acceptance matrix](chat-approval-design.md#work-order-and-acceptance-tests) remains open. Cancellation/lockout on real biometric hardware and credential-provider recovery also remain untested.
 
 This completes the research-and-prototype deliverable. It does not certify security, implement the production host, or authorize installation on a personal machine.
+
+## Authenticated native review follow-up
+
+The [native review boundary lab](native-review-boundary.md) adds authority-authenticated review, a frozen output-sharing decision and a separately retained request/key verifier with one-use consumption. Ten native protocol/UI tests pass. After correcting layout and async lifecycle issues, the participant's screenshot and process log confirmed a Touch ID receipt and replay rejection. The new native review omits number entry and the extra success dialog. This remains one ordinary-user development process with ephemeral keys, not protected production deployment or chat integration.
