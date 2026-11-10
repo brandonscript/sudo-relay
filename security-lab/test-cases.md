@@ -1,5 +1,9 @@
 # Security test cases
 
+## MCP host boundary
+
+The [runbook](../docs/mcp-host-boundary-runbook.md) separates host permission prompts, custom cards and external pages, with manual H0–H9 cases and explicit inconclusive outcomes. `scripts/integration.mts --boundary-only` checks the current real MCP contract without approving or executing a command: confirmation number visible, no approval tool, request remains pending and is cancelled during cleanup. It does not test ChatGPT host isolation.
+
 ## Optional passkey approval experiment
 
 The [approval host catalogue and verification record](approval-host/README.md#run-the-tests) covers 19 browser cases: passkey assertions, session approval, request/output binding, replay, expiry, denial, restart and UI behavior, including loading/unauthenticated states and waiting for the authenticator. It has no execution path. Two cases intentionally reproduce limitations: an authenticated session can be automated, and compromised review text can mislead despite valid passkey verification. They are not passing security guarantees. Manual enrollment and a subsequent real approval succeeded in ChatGPT's in-app browser, with one receipt and user-reported 1Password use. MCP integration remains unverified.

@@ -4,6 +4,8 @@ November 10, 2026. Production design proposal with an isolated, unprivileged exp
 
 The [experiment results](approval-experiment-results.md) map the completed research to its evidence, including real 1Password and Touch ID trials, and separate it from the production work below.
 
+Use the [MCP host boundary runbook](mcp-host-boundary-runbook.md) to test model visibility, UI access and direct approval calls independently. The current MCP exposes the confirmation number; the ordinary-browser findings are not evidence of a bypass of ChatGPT's own permission prompt.
+
 ## Recommendation
 
 The desired experience remains approval in chat without fetching a phone or opening another app. The [Touch ID and fallback review](biometric-approval.md) evaluates local passkeys and a native macOS helper against that requirement. The separate review page below is an experiment and a possible compatibility fallback, not an accepted mandatory user flow.

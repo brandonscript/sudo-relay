@@ -41,6 +41,7 @@ jobs:
         working-directory: security-lab/touch-id
       - run: npm ci && npm run check && npm test && npm run build
         working-directory: ui
+      - run: node --import ./ui/node_modules/tsx/dist/loader.mjs scripts/integration.mts --boundary-only
       - run: node --import ./ui/node_modules/tsx/dist/loader.mjs scripts/integration.mts
   privileged:
     strategy:
