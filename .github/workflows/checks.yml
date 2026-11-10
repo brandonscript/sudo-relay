@@ -5,6 +5,7 @@ permissions:
 jobs:
   check:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -24,6 +25,7 @@ jobs:
       - run: node --import ./ui/node_modules/tsx/dist/loader.mjs scripts/integration.mts
   privileged:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -35,8 +37,11 @@ jobs:
         run: |
           python3 - <<'PYTEST'
           import json, subprocess
+          executables = []
           for line in open('/tmp/privileged-test-build.json'):
               item = json.loads(line)
               if item.get('executable') and item.get('target', {}).get('name') == 'privileged':
-                  subprocess.run(['sudo', item['executable'], '--ignored', '--test-threads=1'], check=True)
+                  executables.append(item['executable'])
+          assert len(executables) == 1, executables
+          subprocess.run(['sudo', executables[0], '--ignored', '--test-threads=1'], check=True)
           PYTEST

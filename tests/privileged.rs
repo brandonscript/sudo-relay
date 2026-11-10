@@ -31,7 +31,7 @@ impl Drop for Cleanup {
     }
 }
 fn probe(config: &Config, uid: u32, operation: &str, request: Option<&str>) {
-    let status = Process::new(std::env::current_exe().unwrap())
+    let status = Process::new(config.socket.parent().unwrap().join("peer-probe"))
         .args([
             "--ignored",
             "--exact",
@@ -41,6 +41,7 @@ fn probe(config: &Config, uid: u32, operation: &str, request: Option<&str>) {
         .env("PE_CONFIG", serde_json::to_string(config).unwrap())
         .env("PE_OPERATION", operation)
         .env("PE_APPROVAL", request.unwrap_or(""))
+        .current_dir("/")
         .uid(uid)
         .gid(config.socket_gid)
         .status()
@@ -51,13 +52,22 @@ fn probe(config: &Config, uid: u32, operation: &str, request: Option<&str>) {
 #[ignore = "root only; run in a disposable VM/container"]
 fn root_broker_enforces_identity_and_protected_paths() {
     assert_eq!(unsafe { libc::geteuid() }, 0, "disposable root test only");
-    let dir = PathBuf::from(format!("/var/lib/sudo-relay-test-{}", uuid::Uuid::new_v4()));
+    let parent = if cfg!(target_os = "macos") {
+        "/private/var"
+    } else {
+        "/var/lib"
+    };
+    let dir = PathBuf::from(parent).join(format!("sudo-relay-test-{}", uuid::Uuid::new_v4()));
     fs::create_dir_all(&dir).unwrap();
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
     let mut cleanup = Cleanup {
         dir: dir.clone(),
         child: None,
     };
+    // Runner home directories may be inaccessible after dropping to the fixture UID.
+    let probe_path = dir.join("peer-probe");
+    fs::copy(std::env::current_exe().unwrap(), &probe_path).unwrap();
+    fs::set_permissions(&probe_path, fs::Permissions::from_mode(0o755)).unwrap();
     let state = dir.join("state");
     fs::create_dir(&state).unwrap();
     fs::set_permissions(&state, fs::Permissions::from_mode(0o700)).unwrap();
