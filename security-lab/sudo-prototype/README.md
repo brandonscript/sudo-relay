@@ -53,3 +53,12 @@ Observed request policy checks were 3.5–6.5 ms. Sudo authentication, command l
 - Crash/power-loss durability, PID reuse under hostile load, memory extraction, hostile kernel behavior, dependency auditing and independent review remain untested. No container-escape testing was performed.
 
 The result supports further integration work. It does not remove any security limitation from the published alpha.
+
+## Follow-up review: authentication shortcuts
+
+Two additional characterization tests bring this fixture to eleven tests, all passing in 2.148 seconds. These two tests deliberately assert observed bypass behavior in unsupported configurations; they are not proof of protection:
+
+- `test_known_limit_nopasswd_skips_pam_without_a_ticket`: a NOPASSWD rule allowed a marker command without any ticket, even through the usual `-k` launcher.
+- `test_known_limit_cached_authentication_skips_pam_without_a_ticket`: with global five-minute timestamps and `-k` omitted, an approved launch populated credentials that allowed a subsequent unsigned marker command. The positive rejection control using `-k` ignored that cache and blocked the unsigned launch.
+
+The original no-reusable-authentication result depends on the fixture settings and launcher flags. A production integration must enforce signed approval before every broker launch regardless of whether PAM runs, prevent relay authentication from warming general sudo credentials, and test both existing timestamps and NOPASSWD policies. These cases do not show a forged signature accepted by the module; they show the module being skipped. Ordinary pre-existing sudo permissions remain outside sudo-relay's interception scope.

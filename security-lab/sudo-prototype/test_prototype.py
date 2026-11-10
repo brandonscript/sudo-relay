@@ -21,13 +21,13 @@ with tempfile.NamedTemporaryFile(dir='/lab/approver') as f:
 """
 
 
-def policy(user: str, commands: str | None = 'ALL') -> None:
+def policy(user: str, commands: str | None = 'ALL', *, authenticate: bool = True) -> None:
     path = Path('/etc/sudoers.d') / user
     if commands is None:
         path.unlink(missing_ok=True)
     else:
         path.unlink(missing_ok=True)
-        path.write_text(f'{user} ALL=(root) PASSWD: {commands}\n')
+        path.write_text(f'{user} ALL=(root) {"PASSWD" if authenticate else "NOPASSWD"}: {commands}\n')
         path.chmod(0o440)
     subprocess.run(['/usr/sbin/visudo', '-c'], check=True, capture_output=True)
 
@@ -69,8 +69,8 @@ class NativeSudoPrototype(unittest.TestCase):
             policy(user)
         (ROOT / 'effect').unlink(missing_ok=True)
 
-    def prepare(self, command: list[str], user: str = 'sponsor_a') -> tuple[subprocess.Popen[bytes], dict[str, object]]:
-        argv = ['/usr/bin/sudo', '-k', '-S', '-u', 'root', '--', *command]
+    def prepare(self, command: list[str], user: str = 'sponsor_a', *, invalidate: bool = True) -> tuple[subprocess.Popen[bytes], dict[str, object]]:
+        argv = ['/usr/bin/sudo', *(['-k'] if invalidate else []), '-S', '-u', 'root', '--', *command]
         child = subprocess.Popen([sys.executable, '-c', BOOTSTRAP, *argv], user=SPONSORS[user], group=SPONSORS[user],
                                  extra_groups=[], cwd='/', env={'PATH': '/usr/bin:/bin'},
                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -197,6 +197,36 @@ class NativeSudoPrototype(unittest.TestCase):
         result = subprocess.run(['/usr/bin/sudo', '-S', '-u', 'root', '--', '/usr/bin/touch', '/lab/effect'],
                                 user=11001, group=11001, extra_groups=[], input=b'', capture_output=True, timeout=5)
         self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((ROOT / 'effect').exists())
+
+    def test_known_limit_nopasswd_skips_pam_without_a_ticket(self) -> None:
+        # Characterize an unsupported setup; success here is a missing approval gate, not protection.
+        policy('sponsor_a', authenticate=False)
+        child, _ = self.prepare(['/usr/bin/touch', '/lab/effect'])
+        result = self.launch(child)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((ROOT / 'effect').exists())
+
+    def test_known_limit_cached_authentication_skips_pam_without_a_ticket(self) -> None:
+        settings = Path('/etc/sudoers.d/99-cache-probe')
+        settings.write_text('Defaults timestamp_timeout=5, timestamp_type=global\n')
+        settings.chmod(0o440)
+        self.addCleanup(settings.unlink)
+        self.addCleanup(subprocess.run, ['/usr/bin/sudo', '-K'], user=11001, group=11001,
+                        extra_groups=[], capture_output=True, timeout=5, check=True)
+        subprocess.run(['/usr/sbin/visudo', '-c'], check=True, capture_output=True)
+        # Omitting -k is deliberate: this models an integration that forgets cache isolation.
+        first, grant = self.prepare(['/usr/bin/printf', 'approved'], invalidate=False)
+        self.ticket(first, grant)
+        self.assertEqual(self.launch(first).returncode, 0)
+        second, _ = self.prepare(['/usr/bin/touch', '/lab/effect'], invalidate=False)
+        result = self.launch(second)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((ROOT / 'effect').exists())
+        (ROOT / 'effect').unlink()
+        # The existing -k path must ignore that same cache and require a fresh grant.
+        guarded, _ = self.prepare(['/usr/bin/touch', '/lab/effect'])
+        self.assertNotEqual(self.launch(guarded).returncode, 0)
         self.assertFalse((ROOT / 'effect').exists())
 
     def test_sponsor_cannot_read_signing_key_or_modify_grants(self) -> None:
