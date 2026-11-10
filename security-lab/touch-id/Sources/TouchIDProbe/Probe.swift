@@ -40,8 +40,6 @@ struct Probe {
             exit(1)
         }
         let app = NSApplication.shared
-        app.applicationIconImage = NSImage(systemSymbolName: "shield", accessibilityDescription: "sudo-relay test")?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 128, weight: .regular))
         app.setActivationPolicy(.regular)
         app.activate(ignoringOtherApps: true)
         do {
