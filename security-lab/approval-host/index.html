@@ -7,7 +7,7 @@
 <h1>Approval experiment</h1>
 <p>Nothing runs here. Approval creates a test receipt, without connecting to sudo or the broker.</p>
 <p id="mode" class="muted"></p><p id="warning"></p>
-<div class="actions"><button id="enroll" type="button" disabled>Set up test passkey</button><button id="new" type="button" disabled>New test request</button></div>
+<div id="setup-actions" class="actions" hidden><button id="enroll" type="button" disabled>Set up test passkey</button><button id="new" type="button" disabled>New test request</button></div>
 <section id="request" class="card" hidden aria-labelledby="title">
 <h2 id="title">Review test command</h2><p id="machine" class="muted"></p><p id="reason"></p>
 <pre><code id="command"></code></pre><p id="expiry" class="muted"></p>

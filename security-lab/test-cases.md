@@ -2,7 +2,7 @@
 
 ## Optional passkey approval experiment
 
-The [approval host catalogue and verification record](approval-host/README.md#run-the-tests) covers 16 browser cases: passkey assertions, session approval, request/output binding, replay, expiry, denial, restart and UI behavior. It has no execution path. Two cases intentionally reproduce limitations: an authenticated session can be automated, and compromised review text can mislead despite valid passkey verification. They are not passing security guarantees. Physical authenticators and a real ChatGPT integration remain unverified.
+The [approval host catalogue and verification record](approval-host/README.md#run-the-tests) covers 18 browser cases: passkey assertions, session approval, request/output binding, replay, expiry, denial, restart and UI behavior, including loading/unauthenticated states. It has no execution path. Two cases intentionally reproduce limitations: an authenticated session can be automated, and compromised review text can mislead despite valid passkey verification. They are not passing security guarantees. Physical authenticators and a real ChatGPT integration remain unverified.
 
 Record the tested source version, image ID, runtime limits, result, and evidence for every run. `PASS` means the expected rejection/control occurred, `VULNERABLE` means unauthorized capability was demonstrated, `ERROR` means the harness could not establish a result, and `NOT RUN` means no claim is made. Never relabel an expected limitation as a security pass.
 

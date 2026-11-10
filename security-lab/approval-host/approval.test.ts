@@ -60,6 +60,30 @@ async function capture(page: Page, number: string) {
   return result;
 }
 
+test('G1: a fresh browser without the setup session shows no enrollment or request controls', async ({ page, lab }) => {
+  await page.goto(lab.origin);
+  await expect(page.locator('#message')).toContainText('Open the setup link');
+  await expect(page.getByRole('button', { name: 'Set up test passkey' })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'New test request' })).toBeHidden();
+  expect((await page.request.get(`${lab.origin}/state`)).status()).toBe(403);
+});
+
+test('G2: controls stay hidden until the authenticated mode is known', async ({ page, lab }) => {
+  let release: () => void = () => {};
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  let requested: () => void = () => {};
+  const ready = new Promise<void>(resolve => { requested = resolve; });
+  await page.route('**/state', async route => { requested(); await hold; await route.continue(); });
+  try {
+    await page.goto(lab.setupURL); await ready;
+    await expect(page.getByRole('button', { name: 'Set up test passkey' })).toBeHidden();
+    await expect(page.getByRole('button', { name: 'New test request' })).toBeHidden();
+  } finally { release(); }
+  await expect(page.getByRole('button', { name: 'Set up test passkey' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'New test request' })).toBeDisabled();
+  expect((await state(page, lab)).enrolled).toBe(false);
+});
+
 test('P1: passkey approval through Enter binds output choice and renders Approved', async ({ page, lab }) => {
   await enroll(page, lab); const input = await request(page, lab);
   await page.getByLabel('Share command output with the agent').check();

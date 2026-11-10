@@ -18,6 +18,8 @@ npm start
 
 Open the one-use setup link printed in the terminal. Select **Set up test passkey**, complete your authenticator's prompt, and select **New test request**. Enter the displayed number and press Enter or **Approve once**. The result should say that a receipt was created and nothing executed. Try **Deny** on another request.
 
+Keep using the browser/profile where you opened that setup link. A bare localhost URL in another browser has no authenticated session. Controls stay hidden until the session and mode load; an error asks you to use the setup link. Loading the page does not enroll a passkey.
+
 To try the mode without a passkey, stop the process with Ctrl-C and run:
 
 ```sh
@@ -57,6 +59,8 @@ Playwright opens isolated Chromium profiles. Where the browser cache is restrict
 
 | Case | What it checks | What it does not establish |
 |---|---|---|
+| G1 | A fresh browser without the setup session shows an error and no enrollment/request controls. | Production account login or cross-browser session sharing. |
+| G2 | Controls remain hidden while authenticated mode is loading; passkey setup appears afterward with no enrolled credential. | Every network or client failure mode. |
 | P1 | Valid passkey flow, Enter, Approved state, hidden Deny button, remembered output choice. | Physical human presence or real device behavior. |
 | P2 | Correct number alone, missing assertion and attempted mode downgrade fail. | Every possible client bypass. |
 | P3 | Changing output choice or request ID, or injecting a replacement command, fails; original proof succeeds. | Mutations of every stored request field or mutable command dependencies. |
@@ -78,6 +82,8 @@ C1 and S1 are characterization tests: their passing result means the limitation 
 ## Verification record
 
 November 10, 2026: all **16 cases passed in 7.2 seconds** on local macOS arm64, Node 24.16.0, Playwright 1.65.0 and Chromium 158.0.8127.18. Strict TypeScript checking passed. The new package's `npm audit` reported zero known vulnerabilities after replacing the initially selected Zod version; this is not a dependency audit of the entire repository. Browser tests needed to run outside the process sandbox because macOS denied Chromium's bootstrap IPC.
+
+Later that day, a reported button flip was reproduced when session loading failed or remained pending: the old page hid enrollment but left the disabled request button visible. G1/G2 failed against that behavior, then all **18 cases passed in 8.8 seconds** after hiding the controls until authenticated state is available. Strict TypeScript checking passed. This reproduction does not establish which browser/session caused the original report; no automatic enrollment was observed in the live Chrome tab.
 
 All five [GitHub CI jobs](https://github.com/brandonscript/sudo-relay/actions/runs/42868522346) passed for commit `0becec2`, including the new Linux browser job and the existing Linux/macOS checks and privileged broker fixtures. The approval experiment itself launched no command. The pre-existing privileged jobs are separate broker tests on disposable hosted runners, not a passkey-to-root integration. Real authenticator gestures, ChatGPT handoff, mobile use, production enrollment and the native sudo path remain untested here.
 

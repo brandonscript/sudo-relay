@@ -21,9 +21,10 @@ async function api(path: string, body?: unknown, token = state?.csrf): Promise<u
 }
 function render(): void {
   const active = !!pending && state?.state === 'pending' && Date.now() < pending.envelope.expires_at * 1000;
+  element('setup-actions').hidden = !state;
   element<HTMLButtonElement>('new').disabled = busy || !state || active || (state.mode === 'passkey' && !state.enrolled);
   element<HTMLButtonElement>('enroll').disabled = busy || !state || state.enrolled;
-  element('enroll').hidden = state?.mode !== 'passkey';
+  element('enroll').hidden = state?.mode === 'session';
   element<HTMLButtonElement>('approve').disabled = busy || !active;
   element<HTMLButtonElement>('deny').disabled = busy || !active;
   share.disabled = busy || !active; number.disabled = busy || !active;
