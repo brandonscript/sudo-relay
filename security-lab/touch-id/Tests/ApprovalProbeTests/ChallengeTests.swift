@@ -12,6 +12,18 @@ import Testing
     #expect(!isAuthenticationCancellation(NSError(domain: "unrelated", code: LAError.Code.userCancel.rawValue)))
 }
 
+@Test func expectedExpiryClosesQuietlyButUnexpectedFailuresRemainVisible() {
+    #expect(!requiresErrorNotice(ReviewError.expired))
+    #expect(!requiresErrorNotice(NSError(domain: LAError.errorDomain, code: LAError.Code.userCancel.rawValue)))
+    for error in [ReviewError.invalidRequest, .invalidAuthority, .invalidProof, .alreadyDecided] {
+        #expect(requiresErrorNotice(error))
+    }
+    #expect(requiresErrorNotice(NSError(domain: "unrelated", code: 2)))
+    #expect(requiresErrorNotice(NSError(domain: LAError.errorDomain, code: LAError.Code.authenticationFailed.rawValue)))
+    #expect((ReviewError.expired as NSError).domain == "ApprovalProbe.ReviewError")
+    #expect((ReviewError.expired as NSError).code == 2)
+}
+
 @Test func errorReportingOmitsAuthenticationMetadata() {
     let error = NSError(domain: "com.apple.LocalAuthentication", code: -1004, userInfo: [
         "BiometryDatabaseHash": "private-test-canary", NSLocalizedDescriptionKey: "private-test-canary",

@@ -7,6 +7,11 @@ public func isAuthenticationCancellation(_ error: Error) -> Bool {
     return error.domain == LAError.errorDomain && error.code == LAError.Code.userCancel.rawValue
 }
 
+public func requiresErrorNotice(_ error: Error) -> Bool {
+    if case ReviewError.expired = error { return false }
+    return !isAuthenticationCancellation(error)
+}
+
 // Authentication errors can include biometric configuration metadata in userInfo.
 public func errorSummary(_ error: Error) -> String {
     let error = error as NSError
