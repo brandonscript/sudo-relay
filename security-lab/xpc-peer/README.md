@@ -27,6 +27,10 @@ crash or failed positive control is an error, never a security pass.
 November 10, 2026, local macOS 27.2, Swift 6.4.2: all six expected outcomes were
 observed. The last is an intentionally unsafe pattern, not a protective pass.
 
+The six-case XPC step also passed on the GitHub macOS runner for `ec459d5`;
+the complete [CI run](https://github.com/brandonscript/sudo-relay/actions/runs/42927110278)
+succeeded. Hosted-runner results are separate from local hardware/UI checks.
+
 | Case | Expected / observed |
 |---|---|
 | Original client and service, both pinned | Read-only handshake succeeds; one transport receipt. |
