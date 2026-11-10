@@ -20,7 +20,7 @@ async function setup(page: Page, invalidMetadata = false, rejectDecision = false
         const initialization = document.querySelector('#initialization');
         if (!initialization) throw new Error('Missing initialization recorder');
         initialization.textContent = JSON.stringify(message.params);
-        send({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: '2026-01-26', hostInfo: { name: 'synthetic-test-host', version: '1' }, hostCapabilities: { serverTools: {} }, hostContext: {} } });
+        send({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: '2026-01-26', hostInfo: { name: 'synthetic-test-host', version: '1' }, hostCapabilities: { serverTools: {} }, hostContext: { theme: 'dark', styles: { variables: { '--color-background-primary': '#212121' } } } } });
       }
       if (message.method === 'ui/notifications/initialized') send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { content: [], structuredContent: { instance: 'test-instance', request, receipt_count: 0 }, _meta: { probe: { id: request.id, number: '47', canary: 'a'.repeat(32), capability: invalidMetadata ? 'bad' : 'b'.repeat(64) } } } });
       if (message.method === 'tools/call') {
@@ -40,6 +40,8 @@ test('Host probe: Enter sends one decision and shows Approved', async ({ page })
   await card.getByLabel('Type 47 to confirm').fill('46');
   await expect(card.getByRole('button', { name: 'Approve once' })).toBeDisabled();
   await card.getByLabel('Type 47 to confirm').fill('47');
+  await expect(card.locator('#digit-first')).toHaveText('4');
+  await expect(card.locator('#digit-second')).toHaveText('7');
   await card.getByLabel('Type 47 to confirm').press('Enter');
   await expect(card.getByRole('button', { name: 'Approved', exact: true })).toBeDisabled();
   await expect(card.getByRole('button', { name: 'Deny', exact: true })).toBeHidden();
@@ -68,4 +70,32 @@ test('Host probe: server rejection does not display Approved or retry', async ({
   await expect(card.getByRole('status')).toContainText('Server rejected');
   await expect(card.getByRole('button', { name: 'Approve once' })).toBeVisible();
   expect(JSON.parse(await page.locator('#calls').innerText())).toHaveLength(1);
+});
+
+test('Host probe: host theme and narrow layout keep the command and controls visible', async ({ page }) => {
+  await setup(page);
+  await page.locator('iframe').evaluate(frame => { frame.style.width = '320px'; frame.style.height = '1000px'; });
+  const card = page.frameLocator('iframe');
+  await expect(card.getByRole('status')).toContainText('Ready.');
+  await expect(card.locator('html')).toHaveAttribute('data-theme', 'dark');
+  expect(await card.locator('main').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(33, 33, 33)');
+  await card.locator('#command').evaluate(node => { node.textContent = '/usr/bin/printf ' + 'long-argument'.repeat(40); });
+  expect(await card.locator('html').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await expect(card.getByLabel('Type 47 to confirm')).toBeEnabled();
+  await page.evaluate(() => document.querySelector('iframe')?.contentWindow?.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params: { theme: 'light', styles: { variables: { '--color-background-primary': '#ffffff' } } } }, '*'));
+  await expect(card.locator('html')).toHaveAttribute('data-theme', 'light');
+  expect(await card.locator('main').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(255, 255, 255)');
+});
+test('Host probe: countdown expiry disables both decisions without sending a receipt', async ({ page }) => {
+  await page.clock.install();
+  await setup(page);
+  const card = page.frameLocator('iframe');
+  await expect(card.getByRole('status')).toContainText('Ready.');
+  await card.getByLabel('Type 47 to confirm').fill('47');
+  await expect(card.getByRole('button', { name: 'Approve once' })).toBeEnabled();
+  await page.clock.fastForward(301_000);
+  await expect(card.locator('#expiry')).toHaveText('Expired');
+  await expect(card.getByRole('button', { name: 'Approve once' })).toBeDisabled();
+  await expect(card.getByRole('button', { name: 'Deny' })).toBeDisabled();
+  expect(await page.locator('#calls').innerText()).toBe('[]');
 });

@@ -79,7 +79,7 @@ The ledger is intentionally volatile. Restart changes the instance ID and discar
 
 ### Inline-only variant (0.1.3)
 
-The current probe declares `availableDisplayModes: ["inline"]` in both its MCP Apps initialization and OpenAI resource metadata, with `preferredDisplayMode: "inline"`. Its resource URI is `ui://sudo-relay-host-probe/inline-v1.html`; public results identify `variant: "inline-only-v1"`. The heading reads “Inline-only approval experiment.” These markers distinguish the new fixture from stale cards and server connections. The receipt verifier is unchanged; this is a display-control experiment, not a production security fix.
+Version 0.1.3 declares `availableDisplayModes: ["inline"]` in both its MCP Apps initialization and OpenAI resource metadata, with `preferredDisplayMode: "inline"`. Its resource URI is `ui://sudo-relay-host-probe/inline-v1.html`; public results identify `variant: "inline-only-v1"`. The heading reads “Inline-only approval experiment.” These markers distinguish the new fixture from stale cards and server connections. The receipt verifier is unchanged; this is a display-control experiment, not a production security fix.
 
 Local checks passed: five Rust tests, the real stdio protocol check (including resource metadata), strict TypeScript checks, and four synthetic-bridge browser tests (including initialization capabilities). The first browser attempt lacked the required browser binary; the passing run used an isolated downloaded headless Chromium profile. Installed artifacts matched all four package checksums, and the loader check passed.
 
@@ -112,3 +112,11 @@ codex plugin marketplace remove sudo-relay-lab
 ```
 
 Close the test conversation/server before deleting the generated temporary marketplace directory. No sudo, PAM or Keychain cleanup is required. There are no enrolled credentials. The temporary source may disappear during OS cleanup; repackage and register a fresh source if needed.
+
+### Styled inline card (0.1.4)
+
+The receipt-only card now uses the rounded layout from the original mockup, host-provided theme colors, a wrapping command block, a countdown and a single accessible input displayed as two digit boxes. Enter still submits. Approved/Denied stays visible and the unused button disappears. Test internals stay in the disclosure; the card plainly says that nothing executes. Output sharing remains off, without a pretend control.
+
+The heading is “Approval test” and the resource URI is `ui://sudo-relay-host-probe/inline-v2.html`. The `inline-only-v1` protocol variant and both inline-only display declarations are unchanged. Existing cards retain their old markup; a fresh card requires the refreshed plugin connection.
+
+Six synthetic-bridge browser checks passed, covering Enter, denial, invalid metadata, rejected decisions, theme changes/narrow command wrapping, and expiry. Five Rust tests, the stdio protocol check, TypeScript checks, formatting and Clippy passed. The installed 0.1.4 package matched all four checksums and the loader check passed. A separate local preview with fake metadata was visually inspected; that preview has no connection to the real probe. The restyled card has not yet been verified in the live inline host. None of these presentation checks establishes a human-only security boundary.

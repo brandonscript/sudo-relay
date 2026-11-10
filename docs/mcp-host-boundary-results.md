@@ -77,6 +77,12 @@ The user requested native forms only if inline-only did not work. Given the succ
 
 All five jobs in [CI run 42900554885](https://github.com/brandonscript/sudo-relay/actions/runs/42900554885) passed for `effb74e`. This includes the repository's existing disposable-runner broker tests; the local live probe remains receipt-only and has no command execution path. CI does not establish the desktop host's security boundary.
 
+## Receipt-only presentation update (0.1.4)
+
+The user supplied screenshots of the approved inline card and the original mockup. The fixture now follows the mockup's rounded layout and confirmation input while retaining inline-only declarations and its receipt-only scope. Version 0.1.4 uses resource `inline-v2.html`; the approval protocol is unchanged. Six synthetic-bridge UI checks, five Rust tests, the stdio protocol checks and the installed loader/checksum checks passed. A separate localhost preview with fake metadata was visually inspected. Live-host appearance and isolation were not retested after this update.
+
+This is not readiness for root access. The protected production signer, sponsor-bound installation/revocation integration and broader host isolation checks in the [pre-trial review](pre-trial-review.md) remain open. The earlier inline-only observation establishes that one supported browser route did not expose that card, with a successful human control; it does not prove the agent cannot approve through any other route.
+
 ## Design consequence
 
 Follow-up [developer-control research](mcp-approval-protection-research.md) identifies inline-only display metadata and host-rendered elicitation as untested candidates. No documented general per-widget automation prohibition was found in the reviewed sources.

@@ -9,7 +9,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 BINARY = ROOT / "target/debug/mcp-host-probe"
 CARD = ROOT / "ui/dist/host-probe.html"
-VERSION = "0.1.3"
+VERSION = "0.1.4"
 # shortcut: local cache paths avoid unresolved placeholders; use portable paths once the host loader passes startup checks.
 installed = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex")) / "plugins/cache/sudo-relay-lab/sudo-relay-host-probe" / VERSION
 assert BINARY.is_file() and CARD.is_file(), "Build the probe and UI first"

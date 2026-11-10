@@ -1,4 +1,5 @@
-import { App } from '@modelcontextprotocol/ext-apps';
+import { App, applyDocumentTheme, applyHostStyleVariables, type McpUiHostContext } from '@modelcontextprotocol/ext-apps';
+import { remainingTime } from './presentation.js';
 
 function object(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Invalid probe response');
@@ -13,14 +14,22 @@ function element<T extends HTMLElement>(id: string): T {
   if (!value) throw new Error(`Missing element: ${id}`);
   return value;
 }
-const app = new App({ name: 'sudo-relay-host-probe', version: '0.1.3' }, { availableDisplayModes: ['inline'] });
+const app = new App({ name: 'sudo-relay-host-probe', version: '0.1.4' }, { availableDisplayModes: ['inline'] });
 const input = element<HTMLInputElement>('number');
 const approve = element<HTMLButtonElement>('approve');
 const deny = element<HTMLButtonElement>('deny');
 const status = element('status');
 let pending: { id: string; capability: string; number: string; expires: number } | undefined;
 let busy = false;
+function applyHostContext(context: McpUiHostContext): void {
+  if (context.theme) applyDocumentTheme(context.theme);
+  if (context.styles?.variables) applyHostStyleVariables(context.styles.variables);
+}
+app.onhostcontextchanged = applyHostContext;
 function update(): void {
+  element('digit-first').textContent = input.value[0] || '·';
+  element('digit-second').textContent = input.value[1] || '·';
+  if (pending) element('expiry').textContent = remainingTime(pending.expires);
   const available = !!pending && Date.now() < pending.expires * 1000 && !busy;
   approve.disabled = !available || input.value !== pending?.number;
   deny.disabled = !available;
@@ -44,6 +53,7 @@ function show(value: unknown, metadata: unknown): void {
   element('challenge').textContent = string(hidden.number);
   pending = { id, capability: string(hidden.capability), number: string(hidden.number), expires: request.expires_at };
   approve.textContent = 'Approve once'; deny.textContent = 'Deny'; approve.hidden = false; deny.hidden = false;
+  delete approve.dataset.decided; delete deny.dataset.decided;
   input.value = ''; busy = false; status.textContent = 'Ready. This records a receipt only.'; update();
 }
 app.ontoolresult = params => {
@@ -67,6 +77,8 @@ async function decide(approved: boolean): Promise<void> {
     if (record.id !== request.id || record.state !== (approved ? 'approved' : 'denied')) throw new Error('Unexpected receipt; inspect probe_status.');
     if (pending !== request) return;
     pending = undefined;
+    element('expiry').textContent = approved ? 'Approved' : 'Denied';
+    (approved ? approve : deny).dataset.decided = '';
     approve.textContent = 'Approved'; deny.textContent = 'Denied'; approve.hidden = !approved; deny.hidden = approved;
     status.textContent = approved ? 'Receipt recorded. Nothing executed.' : 'Denied. Nothing executed.';
   } catch (error: unknown) {
@@ -78,4 +90,7 @@ element<HTMLFormElement>('form').addEventListener('submit', event => { event.pre
 deny.addEventListener('click', () => { void decide(false); });
 setInterval(update, 1000);
 update();
-void app.connect().catch(() => { pending = undefined; status.textContent = 'This host did not connect the MCP Apps bridge.'; update(); });
+void app.connect().then(() => {
+  const context = app.getHostContext();
+  if (context) applyHostContext(context);
+}).catch(() => { pending = undefined; status.textContent = 'This host did not connect the MCP Apps bridge.'; update(); });
