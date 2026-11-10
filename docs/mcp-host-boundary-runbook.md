@@ -9,6 +9,7 @@ Test three separate claims: the agent cannot read UI-only data, cannot operate t
 - The MCP server exposes request, status and cancellation tools, with no approval tool. The reference card requires an unimplemented trusted signing adapter and cannot approve by itself.
 - Real ChatGPT permission-dialog and embedded-card isolation tests below are **NOT RUN**. A working, receipt-only host adapter is a prerequisite. A disabled preview that cannot approve even for a person cannot pass these tests.
 - A separate [desktop card transport probe](../security-lab/mcp-host-probe/README.md) now provides a fixed fake command, UI-only canary, app-only receipt tool and local plugin package. It measures transport behavior only: its capability is not authenticated human confirmation, and it is not the missing production signing adapter.
+- The probe's first [live Codex connectivity control](../security-lab/mcp-host-probe/README.md#first-live-codex-card-approval) passed on November 10: the user reported seeing and approving the card, and live MCP status confirmed one receipt for the unchanged request. This does not establish UI isolation, metadata secrecy or the stronger human-only H0 claim.
 
 ## Identify exactly what is being tested
 
