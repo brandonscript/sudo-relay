@@ -153,7 +153,10 @@ fn root_broker_enforces_identity_and_protected_paths() {
     probe(&config, 10001, "agent_approve", Some(&json));
     probe(&config, 10002, "approve", Some(&json));
     probe(&config, 10002, "replay", Some(&json));
-    let link = std::env::temp_dir().join(format!("pe-link-{}", uuid::Uuid::new_v4()));
+    let writable = dir.join("writable");
+    fs::create_dir(&writable).unwrap();
+    fs::set_permissions(&writable, fs::Permissions::from_mode(0o777)).unwrap();
+    let link = writable.join("printf");
     symlink("/usr/bin/printf", &link).unwrap();
     assert!(
         protected_path(&link, 0).is_err(),
