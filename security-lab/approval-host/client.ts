@@ -8,6 +8,7 @@ function element<T extends HTMLElement = HTMLElement>(id: string): T {
 }
 const share = element<HTMLInputElement>('share'), number = element<HTMLInputElement>('number');
 let state: State | undefined, pending: Pending | undefined, busy = false;
+let approvalPhase: 'passkey' | 'verification' | undefined;
 try { share.checked = localStorage.getItem('approval.shareOutput') === 'true'; } catch { share.checked = false; }
 share.addEventListener('change', () => { try { localStorage.setItem('approval.shareOutput', String(share.checked)); } catch { /* Preference storage is optional. */ } });
 async function api(path: string, body?: unknown, token = state?.csrf): Promise<unknown> {
@@ -30,7 +31,7 @@ function render(): void {
   share.disabled = busy || !active; number.disabled = busy || !active;
   element('approve').hidden = state?.state === 'denied';
   element('deny').hidden = state?.state === 'approved';
-  element('approve').textContent = state?.state === 'approved' ? 'Approved' : 'Approve once';
+  element('approve').textContent = state?.state === 'approved' ? 'Approved' : approvalPhase === 'passkey' ? 'Waiting for passkey…' : approvalPhase === 'verification' ? 'Verifying…' : 'Approve once';
   element('deny').textContent = state?.state === 'denied' ? 'Denied' : 'Deny';
   if (pending) element('expiry').textContent = state?.state === 'pending' ? remainingTime(pending.envelope.expires_at) : state?.state ?? '';
 }
@@ -57,10 +58,11 @@ async function perform(action: () => Promise<void>): Promise<void> {
   if (busy) return; busy = true; render(); element('message').textContent = '';
   try { await action(); }
   catch (error: unknown) { element('message').textContent = error instanceof Error ? error.message : 'Approval failed'; }
-  finally { try { await refresh(); } catch { /* Keep the original failure visible. */ } busy = false; render(); }
+  finally { approvalPhase = undefined; try { await refresh(); } catch { /* Keep the original failure visible. */ } busy = false; render(); }
 }
 element('enroll').addEventListener('click', () => void perform(async () => {
   const optionsJSON = registrationOptionsSchema.parse(await api('/register/options', {}));
+  element('message').textContent = 'Complete passkey setup in your browser or password manager.';
   const response = await startRegistration({ optionsJSON });
   await api('/register/finish', response);
   element('message').textContent = 'Test passkey enrolled for this run.';
@@ -76,7 +78,10 @@ element('approval').addEventListener('submit', event => {
     const decision = { id: pending.envelope.id, number: number.value, share_output: share.checked };
     if (state.mode === 'passkey') {
       const optionsJSON = authenticationOptionsSchema.parse(await api('/approve/options', decision));
+      approvalPhase = 'passkey'; render();
+      element('message').textContent = 'Waiting for your passkey. Complete the prompt in your browser or password manager. Nothing is approved yet.';
       const response = await startAuthentication({ optionsJSON });
+      approvalPhase = 'verification'; render(); element('message').textContent = 'Verifying your approval…';
       await api('/approve/finish', { ...decision, response });
     } else await api('/approve/session', decision);
     element('message').textContent = 'Approved. Test receipt created; nothing executed.';

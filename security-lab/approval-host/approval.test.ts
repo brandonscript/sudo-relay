@@ -84,6 +84,23 @@ test('G2: controls stay hidden until the authenticated mode is known', async ({ 
   expect((await state(page, lab)).enrolled).toBe(false);
 });
 
+test('G3: waiting for an authenticator is explicit and creates no receipt', async ({ page, lab }) => {
+  const { cdp, authenticatorId } = await enroll(page, lab); const input = await request(page, lab);
+  await cdp.send('WebAuthn.setAutomaticPresenceSimulation', { authenticatorId, enabled: false });
+  await page.getByLabel('Confirmation number').fill(input.number);
+  await page.getByRole('button', { name: 'Approve once' }).click();
+  await expect(page.locator('#message')).toContainText('Waiting for your passkey');
+  await expect(page.getByRole('button', { name: 'Waiting for passkey…', exact: true })).toBeDisabled();
+  expect((await state(page, lab)).state).toBe('pending');
+  expect((await state(page, lab)).receipts).toBe(0);
+  await page.reload();
+  await cdp.send('WebAuthn.setAutomaticPresenceSimulation', { authenticatorId, enabled: true });
+  await page.getByLabel('Confirmation number').fill(input.number);
+  await page.getByRole('button', { name: 'Approve once' }).click();
+  await expect(page.getByRole('button', { name: 'Approved', exact: true })).toBeDisabled();
+  expect((await state(page, lab)).receipts).toBe(1);
+});
+
 test('P1: passkey approval through Enter binds output choice and renders Approved', async ({ page, lab }) => {
   await enroll(page, lab); const input = await request(page, lab);
   await page.getByLabel('Share command output with the agent').check();

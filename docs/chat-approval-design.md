@@ -8,7 +8,7 @@ Keep passkeys optional. The [approval experiment](../security-lab/approval-host/
 
 This is the most promising fallback found in this research, not a verified ChatGPT integration. It changes the original all-inline experience: the person may briefly leave the card and confirm with their authenticator. No sudo password enters chat. If entirely inline approval is essential, it remains blocked on a demonstrated host capability that protects both review and authorization.
 
-The immediate deliverable is a fake-command approval receipt and a compatibility record. Eighteen local browser cases now pass, including two that deliberately reproduce weaker guarantees; see the experiment's verification record. Native sudo integration follows only after the selected mode's boundary is understood and tested in the real host.
+The immediate deliverable is a fake-command approval receipt and a compatibility record. Nineteen local browser cases now pass, including two that deliberately reproduce weaker guarantees; see the experiment's verification record. Native sudo integration follows only after the selected mode's boundary is understood and tested in the real host.
 
 ## Optional authentication policy
 
