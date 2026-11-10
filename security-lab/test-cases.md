@@ -12,6 +12,16 @@ The [approval host catalogue and verification record](approval-host/README.md#ru
 
 The [native probe catalogue](touch-id/README.md#checks-and-limits) distinguishes automated signature-binding/expiry checks from manual Secure Enclave enforcement, successive prompts and cancellation checks. The two software-key tests passed locally. The first real run rejected both noninteractive signing attempts and verified both interactive signatures; the user confirmed two separate successful Touch ID approvals. A third automated case checks that error logs omit authentication metadata. There is no command-execution path or persistent key.
 
+## Native process identity experiment
+
+The [XPC peer catalogue](xpc-peer/README.md) checks two ordinary-user processes:
+three positive controls, rejected substituted clients/services, and an unsafe
+direct-call characterization. All six expected outcomes were observed locally.
+The unsafe case creates a transport receipt before the client rejects the reply;
+a read-only handshake prevents the tested client from sending that operation to
+the substituted service. These are transport receipts, not human approvals.
+Writable fixture pins and absent protected enrollment remain explicit limits.
+
 Record the tested source version, image ID, runtime limits, result, and evidence for every run. `PASS` means the expected rejection/control occurred, `VULNERABLE` means unauthorized capability was demonstrated, `ERROR` means the harness could not establish a result, and `NOT RUN` means no claim is made. Never relabel an expected limitation as a security pass.
 
 ## Regression checks after the baseline review
