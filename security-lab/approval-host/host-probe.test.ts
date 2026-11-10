@@ -5,7 +5,7 @@ import { test, expect, type Page } from '@playwright/test';
 const html = readFileSync(new URL('../../ui/dist/host-probe.html', import.meta.url), 'utf8');
 async function setup(page: Page, invalidMetadata = false, rejectDecision = false): Promise<void> {
   page.on('pageerror', error => { throw error; });
-  await page.setContent('<pre id="calls">[]</pre><iframe title="probe"></iframe>');
+  await page.setContent('<pre id="calls">[]</pre><pre id="initialization"></pre><iframe title="probe"></iframe>');
   await page.evaluate(({ html, invalidMetadata, rejectDecision }) => {
     const iframe = document.querySelector('iframe');
     const callsNode = document.querySelector('#calls');
@@ -16,7 +16,12 @@ async function setup(page: Page, invalidMetadata = false, rejectDecision = false
       if (event.source !== iframe.contentWindow || typeof event.data !== 'object' || event.data === null) return;
       const message = event.data as Record<string, unknown>;
       const send = (value: unknown): void => iframe.contentWindow?.postMessage(value, '*');
-      if (message.method === 'ui/initialize') send({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: '2026-01-26', hostInfo: { name: 'synthetic-test-host', version: '1' }, hostCapabilities: { serverTools: {} }, hostContext: {} } });
+      if (message.method === 'ui/initialize') {
+        const initialization = document.querySelector('#initialization');
+        if (!initialization) throw new Error('Missing initialization recorder');
+        initialization.textContent = JSON.stringify(message.params);
+        send({ jsonrpc: '2.0', id: message.id, result: { protocolVersion: '2026-01-26', hostInfo: { name: 'synthetic-test-host', version: '1' }, hostCapabilities: { serverTools: {} }, hostContext: {} } });
+      }
       if (message.method === 'ui/notifications/initialized') send({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { content: [], structuredContent: { instance: 'test-instance', request, receipt_count: 0 }, _meta: { probe: { id: request.id, number: '47', canary: 'a'.repeat(32), capability: invalidMetadata ? 'bad' : 'b'.repeat(64) } } } });
       if (message.method === 'tools/call') {
         const params = message.params as Record<string, unknown>;
@@ -31,6 +36,7 @@ test('Host probe: Enter sends one decision and shows Approved', async ({ page })
   await setup(page);
   const card = page.frameLocator('iframe');
   await expect(card.getByRole('status')).toHaveText('Ready. This records a receipt only.');
+  expect(JSON.parse(await page.locator('#initialization').innerText())).toMatchObject({ appCapabilities: { availableDisplayModes: ['inline'] } });
   await card.getByLabel('Type 47 to confirm').fill('46');
   await expect(card.getByRole('button', { name: 'Approve once' })).toBeDisabled();
   await card.getByLabel('Type 47 to confirm').fill('47');

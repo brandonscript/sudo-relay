@@ -13,7 +13,7 @@ function element<T extends HTMLElement>(id: string): T {
   if (!value) throw new Error(`Missing element: ${id}`);
   return value;
 }
-const app = new App({ name: 'sudo-relay-host-probe', version: '0.1.0' });
+const app = new App({ name: 'sudo-relay-host-probe', version: '0.1.3' }, { availableDisplayModes: ['inline'] });
 const input = element<HTMLInputElement>('number');
 const approve = element<HTMLButtonElement>('approve');
 const deny = element<HTMLButtonElement>('deny');

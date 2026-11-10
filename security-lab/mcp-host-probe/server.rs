@@ -15,7 +15,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const URI: &str = "ui://sudo-relay-host-probe/card.html";
+const URI: &str = "ui://sudo-relay-host-probe/inline-v1.html";
 const COMMAND: &str = "/usr/bin/printf 'Receipt only; nothing executes\\n'";
 fn now() -> u64 {
     SystemTime::now()
@@ -116,9 +116,10 @@ impl Ledger {
         let mut result = CallToolResult::success(vec![Content::text(
             "Receipt-only experiment. Nothing executes. This is not proof of human approval.",
         )]);
-        result.structured_content =
-            Some(json!({"instance":self.instance,"request":request.public(),
-            "receipt_count":self.requests.iter().filter(|r| r.state == "approved").count()}));
+        result.structured_content = Some(
+            json!({"variant":"inline-only-v1","instance":self.instance,"request":request.public(),
+            "receipt_count":self.requests.iter().filter(|r| r.state == "approved").count()}),
+        );
         result
     }
 }
@@ -252,7 +253,7 @@ impl ServerHandler for Server {
     fn get_info(&self) -> ServerInfo {
         ServerInfo { instructions:Some("Local receipt-only MCP Apps transport experiment. No commands execute. Never request real credentials. UI-only metadata and app-only tools are being tested, not assumed secure.".into()),
             capabilities:ServerCapabilities::builder().enable_tools().enable_resources().build(),
-            server_info:Implementation {name:"sudo-relay-host-probe".into(),version:"0.1.0".into(),..Default::default()},..Default::default() }
+            server_info:Implementation {name:"sudo-relay-host-probe".into(),version:"0.1.3".into(),..Default::default()},..Default::default() }
     }
     async fn list_resources(
         &self,
@@ -293,6 +294,10 @@ impl ServerHandler for Server {
                     m.insert(
                         "ui".into(),
                         json!({"csp":{"connectDomains":[],"resourceDomains":[]}}),
+                    );
+                    m.insert(
+                        "openai/ui".into(),
+                        json!({"availableDisplayModes":["inline"],"preferredDisplayMode":"inline"}),
                     );
                     m
                 }),

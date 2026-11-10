@@ -77,6 +77,14 @@ The ledger is intentionally volatile. Restart changes the instance ID and discar
 
 ## Verification record
 
+### Inline-only variant (0.1.3)
+
+The current probe declares `availableDisplayModes: ["inline"]` in both its MCP Apps initialization and OpenAI resource metadata, with `preferredDisplayMode: "inline"`. Its resource URI is `ui://sudo-relay-host-probe/inline-v1.html`; public results identify `variant: "inline-only-v1"`. The heading reads “Inline-only approval experiment.” These markers distinguish the new fixture from stale cards and server connections. The receipt verifier is unchanged; this is a display-control experiment, not a production security fix.
+
+Local checks passed: five Rust tests, the real stdio protocol check (including resource metadata), strict TypeScript checks, and four synthetic-bridge browser tests (including initialization capabilities). The first browser attempt lacked the required browser binary; the passing run used an isolated downloaded headless Chromium profile. Installed artifacts matched all four package checksums, and the loader check passed.
+
+The first live call after installation still reached the original server instance, with no variant marker. That request was cancelled without creating a receipt. The running chat must load the new connection before testing host enforcement; installation alone is not evidence. See the [live results](../../docs/mcp-host-boundary-results.md).
+
 November 10, 2026, local macOS: five Rust checks, the real stdio protocol check, four synthetic-bridge browser tests and the existing 14 UI tests passed. Strict TypeScript, Rust formatting and Clippy passed. The existing 19 approval-host cases also passed during this work. Browser startup required an ordinary-user run outside the restricted process sandbox; no personal browser profile was used.
 
 The new rendered-card test first failed because the shared HTML bundler interpreted JavaScript `$` sequences as replacement patterns. Switching to a replacement callback fixed the embedded script; all four card tests then passed. All five [CI jobs for the probe](https://github.com/brandonscript/sudo-relay/actions/runs/42885322952) passed, including all 23 browser cases and the Linux/macOS protocol checks.

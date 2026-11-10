@@ -41,9 +41,11 @@ try:
     assert tools["record_probe_approval"]["_meta"]["ui"]["visibility"] == ["app"]
     resource = rpc("resources/read", {"uri": tools["new_probe"]["_meta"]["ui"]["resourceUri"]})
     assert "Nothing runs here" in resource["contents"][0]["text"]
+    assert resource["contents"][0]["_meta"]["openai/ui"] == {"availableDisplayModes": ["inline"], "preferredDisplayMode": "inline"}
     created = call("new_probe", {})
     hidden = created["_meta"]["probe"]
     public = created["structuredContent"]
+    assert public["variant"] == "inline-only-v1"
     assert hidden["canary"] not in json.dumps(public) and hidden["capability"] not in json.dumps(public)
     request_id = public["request"]["id"]
     approval = {"id": request_id, "number": hidden["number"], "capability": hidden["capability"]}
