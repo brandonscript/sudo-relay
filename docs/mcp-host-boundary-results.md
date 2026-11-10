@@ -63,6 +63,8 @@ No separate post-change human positive control was needed to establish this succ
 
 ## Design consequence
 
+Follow-up [developer-control research](mcp-approval-protection-research.md) identifies inline-only display metadata and host-rendered elicitation as untested candidates. No documented general per-widget automation prohibition was found in the reviewed sources.
+
 Do not use this capability-only card as proof of explicit human approval against an agent with access to its expanded view. The two-digit number still helps a person identify a request, but cannot authenticate that person.
 
 A stronger integration needs a protected review and confirmation surface that agent tools cannot operate or alter, or independent request-bound confirmation such as a passkey or Touch ID outside the agent's control. Those mechanisms still need their own deployment and display-integrity checks. Optional session approval can remain a weaker mode only with an explicit statement that an agent controlling its authenticated view can approve. No production behavior or authentication policy was changed during this test.
