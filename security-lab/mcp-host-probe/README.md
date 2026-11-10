@@ -124,3 +124,7 @@ Six synthetic-bridge browser checks passed, covering Enter, denial, invalid meta
 ### Translucent card background (0.1.5)
 
 After refreshing the plugin, the user confirmed that the styled inline card looked good. Approval of that request was not reported. Their requested visual adjustment sets the card background to mid-gray at 20% opacity (`rgb(128 128 128 / 20%)`); text and controls retain full opacity. Version 0.1.5 uses resource `inline-v3.html` to avoid stale markup. Inline-only declarations and receipt behavior are unchanged.
+
+### Softer card and input backgrounds (0.1.6)
+
+The user confirmed the 0.1.5 background in the live inline card and requested 10% instead. Both the outer card and number-entry area now use a 10% mid-gray tint. The input tint sits over the host background so it stays distinct from the confirmation row; text remains fully opaque. The resource is `inline-v4.html`. This is a visual change only.
