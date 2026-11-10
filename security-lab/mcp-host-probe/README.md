@@ -120,3 +120,7 @@ The receipt-only card now uses the rounded layout from the original mockup, host
 The heading is “Approval test” and the resource URI is `ui://sudo-relay-host-probe/inline-v2.html`. The `inline-only-v1` protocol variant and both inline-only display declarations are unchanged. Existing cards retain their old markup; a fresh card requires the refreshed plugin connection.
 
 Six synthetic-bridge browser checks passed, covering Enter, denial, invalid metadata, rejected decisions, theme changes/narrow command wrapping, and expiry. Five Rust tests, the stdio protocol check, TypeScript checks, formatting and Clippy passed. The installed 0.1.4 package matched all four checksums and the loader check passed. A separate local preview with fake metadata was visually inspected; that preview has no connection to the real probe. The restyled card has not yet been verified in the live inline host. None of these presentation checks establishes a human-only security boundary.
+
+### Translucent card background (0.1.5)
+
+After refreshing the plugin, the user confirmed that the styled inline card looked good. Approval of that request was not reported. Their requested visual adjustment sets the card background to mid-gray at 20% opacity (`rgb(128 128 128 / 20%)`); text and controls retain full opacity. Version 0.1.5 uses resource `inline-v3.html` to avoid stale markup. Inline-only declarations and receipt behavior are unchanged.

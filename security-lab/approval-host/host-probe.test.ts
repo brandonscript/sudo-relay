@@ -78,13 +78,13 @@ test('Host probe: host theme and narrow layout keep the command and controls vis
   const card = page.frameLocator('iframe');
   await expect(card.getByRole('status')).toContainText('Ready.');
   await expect(card.locator('html')).toHaveAttribute('data-theme', 'dark');
-  expect(await card.locator('main').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(33, 33, 33)');
+  expect(await card.locator('.digits').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(33, 33, 33)');
   await card.locator('#command').evaluate(node => { node.textContent = '/usr/bin/printf ' + 'long-argument'.repeat(40); });
   expect(await card.locator('html').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
   await expect(card.getByLabel('Type 47 to confirm')).toBeEnabled();
   await page.evaluate(() => document.querySelector('iframe')?.contentWindow?.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/host-context-changed', params: { theme: 'light', styles: { variables: { '--color-background-primary': '#ffffff' } } } }, '*'));
   await expect(card.locator('html')).toHaveAttribute('data-theme', 'light');
-  expect(await card.locator('main').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(255, 255, 255)');
+  expect(await card.locator('.digits').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(255, 255, 255)');
 });
 test('Host probe: countdown expiry disables both decisions without sending a receipt', async ({ page }) => {
   await page.clock.install();
