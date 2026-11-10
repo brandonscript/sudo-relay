@@ -26,7 +26,16 @@ codex plugin marketplace add /absolute/path/printed/above
 codex plugin list --marketplace sudo-relay-lab --available --json
 ```
 
-In the **ChatGPT desktop app**, open the Plugins Directory, choose **sudo-relay lab**, and install **sudo-relay-host-probe**. A desktop restart may be required for a newly registered marketplace. Enable the plugin in a local conversation and ask it to call `new_probe`. Local marketplace support can vary by host; if the source or card does not appear, record the host/version and stop. Do not substitute an ordinary browser page and call it a desktop MCP result.
+For **Codex desktop**, install the plugin from **sudo-relay lab** in the plugin picker, or use the supported CLI:
+
+```sh
+codex plugin add sudo-relay-host-probe@sudo-relay-lab
+codex plugin list --marketplace sudo-relay-lab --json
+```
+
+Restart the desktop app if its running conversation has not loaded the new plugin. Enable the plugin in a local conversation and ask it to call `new_probe`. CLI installation does not prove the running conversation has its tools or can render its card. If tools remain unavailable, record that prerequisite as blocked.
+
+**ChatGPT desktop is a separate host target.** Confirm which app is in use before installation; a Codex CLI registration is not verification that ChatGPT sees it. Follow that host's current local-plugin setup and record its version. If its source or card does not appear, stop rather than transferring Codex results. Do not substitute an ordinary browser page and call it a desktop MCP result.
 
 The [official packaging instructions](https://developers.openai.com/plugins/build/plugins) describe local marketplaces; the [desktop plugin guide](https://developers.openai.com/plugins/deploy/desktop-only) documents stdio packaging and `${PLUGIN_ROOT}`. Public distribution is separate from this private local test.
 
@@ -64,7 +73,9 @@ The ledger is intentionally volatile. Restart changes the instance ID and discar
 
 November 10, 2026, local macOS: five Rust checks, the real stdio protocol check, four synthetic-bridge browser tests and the existing 14 UI tests passed. Strict TypeScript, Rust formatting and Clippy passed. The existing 19 approval-host cases also passed during this work. Browser startup required an ordinary-user run outside the restricted process sandbox; no personal browser profile was used.
 
-The new rendered-card test first failed because the shared HTML bundler interpreted JavaScript `$` sequences as replacement patterns. Switching to a replacement callback fixed the embedded script; all four card tests then passed. The local marketplace was registered and the CLI listed the plugin as available, not installed. Desktop UI inspection was refused by the computer-use tool for this app. That refusal is **NOT RUN**, not proof that the host's card is isolated. Manual installation and the real-host positive control remain pending.
+The new rendered-card test first failed because the shared HTML bundler interpreted JavaScript `$` sequences as replacement patterns. Switching to a replacement callback fixed the embedded script; all four card tests then passed. All five [CI jobs for the probe](https://github.com/brandonscript/sudo-relay/actions/runs/42885322952) passed, including all 23 browser cases and the Linux/macOS protocol checks.
+
+The local marketplace was registered but did not appear in the user's picker. An attempted CLI installation was rejected by approval review because the stated target was ChatGPT while the CLI targets Codex. The user then explicitly selected **Codex — install and test the receipt-only plugin here**. Installation succeeded, and the CLI reported the plugin installed and enabled; all four installed artifacts matched the package checksums. The running conversation still did not expose its tools. Desktop UI inspection was refused by the computer-use tool for this app. That refusal is **NOT RUN**, not proof that the host's card is isolated. Loading the plugin into a conversation and the real-host positive control remain pending.
 
 ## Remove it
 
