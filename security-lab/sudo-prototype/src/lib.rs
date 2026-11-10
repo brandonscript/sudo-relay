@@ -59,14 +59,13 @@ unsafe fn pam_text(handle: *mut c_void, item: c_int) -> Option<String> {
     Some(CStr::from_ptr(value.cast()).to_str().ok()?.to_owned())
 }
 
-unsafe fn authenticate(handle: *mut c_void) -> Option<()> {
+fn verified_grant(pid: u32) -> Option<Grant> {
     // The root-only grant directory and process binding are fixture assumptions, not a production protocol.
     let directory = Path::new("/lab/grants");
     let meta = fs::symlink_metadata(directory).ok()?;
     if !meta.is_dir() || meta.uid() != 0 || meta.mode() & 0o077 != 0 {
         return None;
     }
-    let pid = std::process::id();
     let ticket: Ticket =
         serde_json::from_slice(&private_read(&directory.join(format!("{pid}.json")))?).ok()?;
     let payload = hex::decode(ticket.payload).ok()?;
@@ -90,10 +89,79 @@ unsafe fn authenticate(handle: *mut c_void) -> Option<()> {
         || grant.expires > now.checked_add(300)?
         || grant.nonce.len() != 64
         || hex::decode(&grant.nonce).ok()?.len() != 32
-        || grant.sponsor != pam_text(handle, 2)?
-        || grant.sponsor != pam_text(handle, 8)?
+        || grant.nonce != hex::encode(hex::decode(&grant.nonce).ok()?)
         || grant.uid == 0
     {
+        return None;
+    }
+    Some(grant)
+}
+
+fn consume(nonce: &str, stage: &str) -> Option<()> {
+    let directory = Path::new("/lab/grants");
+    let receipt = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(directory.join(format!("{nonce}.{stage}")))
+        .ok()?;
+    receipt.sync_all().ok()?;
+    fs::File::open(directory).ok()?.sync_all().ok()?;
+    Some(())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Launch {
+    sponsor: String,
+    uid: u32,
+    pid: u32,
+    start: String,
+    argv: Vec<String>,
+}
+
+/// Fixture controller gate, called as root before releasing its waiting sponsor process.
+/// Expected fields come from the controller's own launch record, never from the ticket.
+pub fn authorize_launch(expected: &str) -> Option<()> {
+    if unsafe { libc::geteuid() } != 0 || expected.len() > 65_536 {
+        return None;
+    }
+    let launch: Launch = serde_json::from_str(expected).ok()?;
+    let grant = verified_grant(launch.pid)?;
+    if grant.sponsor != launch.sponsor
+        || grant.uid != launch.uid
+        || grant.start != launch.start
+        || grant.argv != launch.argv
+        || !launch
+            .argv
+            .starts_with(&["/usr/bin/sudo", "-k", "-S", "-u", "root", "--"].map(String::from))
+        || launch.argv.len() < 7
+    {
+        return None;
+    }
+    let stat = fs::read_to_string(format!("/proc/{}/stat", launch.pid)).ok()?;
+    if stat.rsplit_once(") ")?.1.split_whitespace().nth(19)? != launch.start {
+        return None;
+    }
+    let status = fs::read_to_string(format!("/proc/{}/status", launch.pid)).ok()?;
+    let uids: Vec<u32> = status
+        .lines()
+        .find(|line| line.starts_with("Uid:"))?
+        .split_whitespace()
+        .skip(1)
+        .map(str::parse)
+        .collect::<Result<_, _>>()
+        .ok()?;
+    if uids != vec![launch.uid; 4] {
+        return None;
+    }
+    // This receipt is mandatory even when sudo skips PAM. Never refund a released grant.
+    consume(&grant.nonce, "released")
+}
+
+unsafe fn authenticate(handle: *mut c_void) -> Option<()> {
+    let grant = verified_grant(std::process::id())?;
+    if grant.sponsor != pam_text(handle, 2)? || grant.sponsor != pam_text(handle, 8)? {
         return None;
     }
     let name = std::ffi::CString::new(grant.sponsor).ok()?;
@@ -119,16 +187,8 @@ unsafe fn authenticate(handle: *mut c_void) -> Option<()> {
     {
         return None;
     }
-    // Commit consumption before returning PAM_SUCCESS, including failed/uncertain launches.
-    let receipt = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(directory.join(format!("{}.consumed", grant.nonce)))
-        .ok()?;
-    receipt.sync_all().ok()?;
-    fs::File::open(directory).ok()?.sync_all().ok()?;
-    Some(())
+    // PAM redemption is separate from the controller's pre-launch consumption.
+    consume(&grant.nonce, "consumed")
 }
 
 /// # Safety

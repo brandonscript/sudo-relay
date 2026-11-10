@@ -65,6 +65,7 @@ class NativeSudoPrototype(unittest.TestCase):
         print(subprocess.check_output(['/usr/bin/sudo', '--version'], text=True).splitlines()[0])
 
     def setUp(self) -> None:
+        self.launches: dict[int, str] = {}
         for user in SPONSORS:
             policy(user)
         (ROOT / 'effect').unlink(missing_ok=True)
@@ -81,6 +82,7 @@ class NativeSudoPrototype(unittest.TestCase):
             'sponsor': user, 'uid': SPONSORS[user], 'pid': child.pid, 'start': stat[19],
             'expires': int(time.time()) + 60, 'nonce': secrets.token_hex(32), 'argv': argv,
         }
+        self.launches[child.pid] = json.dumps({key: grant[key] for key in ['sponsor', 'uid', 'pid', 'start', 'argv']})
         return child, grant
 
     def cleanup_child(self, child: subprocess.Popen[bytes]) -> None:
@@ -104,7 +106,16 @@ class NativeSudoPrototype(unittest.TestCase):
         path.write_text(json.dumps(ticket))
         path.chmod(0o600)
 
-    def launch(self, child: subprocess.Popen[bytes]) -> subprocess.CompletedProcess[bytes]:
+    def gate(self, child: subprocess.Popen[bytes]) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.run(['/usr/local/bin/approval-gate'], input=self.launches[child.pid].encode(),
+                              capture_output=True, timeout=5)
+
+    def launch(self, child: subprocess.Popen[bytes], *, enforce_gate: bool = True) -> subprocess.CompletedProcess[bytes]:
+        if enforce_gate:
+            verdict = self.gate(child)
+            if verdict.returncode != 0:
+                self.cleanup_child(child)
+                return subprocess.CompletedProcess(child.args, verdict.returncode, b'', verdict.stderr)
         started = time.monotonic()
         output, error = child.communicate(b'G', timeout=5)
         print(f'  sudo launch/auth/exit: {(time.monotonic() - started) * 1000:.1f} ms')
@@ -144,7 +155,7 @@ class NativeSudoPrototype(unittest.TestCase):
                 if change == 'start': grant['start'] = '0'
                 if change == 'argv': grant['argv'] = ['/usr/bin/sudo', '-k', '-S', '-u', 'root', '--', '/usr/bin/id', '-u']
                 self.ticket(child, grant, forged=change == 'signature')
-                self.assertNotEqual(self.launch(child).returncode, 0)
+                self.assertNotEqual(self.launch(child, enforce_gate=False).returncode, 0)
                 self.assertFalse((ROOT / 'effect').exists())
 
     def test_signature_cannot_be_reused_for_another_process_or_sponsor(self) -> None:
@@ -203,7 +214,7 @@ class NativeSudoPrototype(unittest.TestCase):
         # Characterize an unsupported setup; success here is a missing approval gate, not protection.
         policy('sponsor_a', authenticate=False)
         child, _ = self.prepare(['/usr/bin/touch', '/lab/effect'])
-        result = self.launch(child)
+        result = self.launch(child, enforce_gate=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((ROOT / 'effect').exists())
 
@@ -218,15 +229,77 @@ class NativeSudoPrototype(unittest.TestCase):
         # Omitting -k is deliberate: this models an integration that forgets cache isolation.
         first, grant = self.prepare(['/usr/bin/printf', 'approved'], invalidate=False)
         self.ticket(first, grant)
-        self.assertEqual(self.launch(first).returncode, 0)
+        self.assertEqual(self.launch(first, enforce_gate=False).returncode, 0)
         second, _ = self.prepare(['/usr/bin/touch', '/lab/effect'], invalidate=False)
-        result = self.launch(second)
+        result = self.launch(second, enforce_gate=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((ROOT / 'effect').exists())
         (ROOT / 'effect').unlink()
         # The existing -k path must ignore that same cache and require a fresh grant.
         guarded, _ = self.prepare(['/usr/bin/touch', '/lab/effect'])
-        self.assertNotEqual(self.launch(guarded).returncode, 0)
+        self.assertNotEqual(self.launch(guarded, enforce_gate=False).returncode, 0)
+        self.assertFalse((ROOT / 'effect').exists())
+
+    def test_gate_blocks_nopasswd_bypass_and_preserves_valid_approval(self) -> None:
+        policy('sponsor_a', authenticate=False)
+        for kind in ['missing', 'forged', 'different-command', 'expired', 'different-sponsor']:
+            with self.subTest(kind=kind):
+                child, grant = self.prepare(['/usr/bin/touch', '/lab/effect'])
+                if kind == 'different-command':
+                    grant['argv'] = ['/usr/bin/sudo', '-k', '-S', '-u', 'root', '--', '/usr/bin/id', '-u']
+                if kind == 'expired': grant['expires'] = int(time.time()) - 1
+                if kind == 'different-sponsor': grant.update(sponsor='sponsor_b', uid=11002)
+                if kind != 'missing': self.ticket(child, grant, forged=kind == 'forged')
+                result = self.launch(child)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(b'Approval gate denied', result.stderr)
+                self.assertFalse((ROOT / 'effect').exists())
+        child, grant = self.prepare(['/usr/bin/touch', '/lab/effect'])
+        self.ticket(child, grant)
+        self.assertEqual(self.launch(child).returncode, 0)
+        self.assertTrue((ROOT / 'effect').exists())
+        self.assertTrue((ROOT / f'grants/{grant["nonce"]}.released').exists())
+        self.assertFalse((ROOT / f'grants/{grant["nonce"]}.consumed').exists(), 'PAM should have been skipped')
+
+    def test_gate_consumes_once_before_release_even_without_pam(self) -> None:
+        policy('sponsor_a', authenticate=False)
+        child, grant = self.prepare(['/usr/bin/touch', '/lab/effect'])
+        self.ticket(child, grant)
+        self.assertEqual(self.gate(child).returncode, 0)
+        self.assertNotEqual(self.gate(child).returncode, 0)
+        self.assertFalse((ROOT / 'effect').exists())
+        # Simulate loss of the waiting process after durable gate consumption.
+        self.cleanup_child(child)
+        retry, replacement = self.prepare(['/usr/bin/touch', '/lab/effect'])
+        replacement['nonce'] = grant['nonce']
+        self.ticket(retry, replacement)
+        self.assertNotEqual(self.launch(retry).returncode, 0)
+        self.assertFalse((ROOT / 'effect').exists())
+
+    def test_gate_rejects_sponsor_invocation_and_cache_unsafe_launcher(self) -> None:
+        child, grant = self.prepare(['/usr/bin/touch', '/lab/effect'])
+        self.ticket(child, grant)
+        result = subprocess.run(['/usr/local/bin/approval-gate'], input=self.launches[child.pid].encode(),
+                                user=11001, group=11001, extra_groups=[], capture_output=True, timeout=5)
+        self.assertNotEqual(result.returncode, 0)
+        unsafe_child, unsafe_grant = self.prepare(['/usr/bin/touch', '/lab/effect'], invalidate=False)
+        self.ticket(unsafe_child, unsafe_grant)
+        self.assertNotEqual(self.launch(unsafe_child).returncode, 0)
+        self.assertFalse((ROOT / 'effect').exists())
+
+    def test_gate_does_not_warm_nonzero_sudo_cache(self) -> None:
+        settings = Path('/etc/sudoers.d/99-cache-probe')
+        settings.write_text('Defaults timestamp_timeout=5, timestamp_type=global\n')
+        settings.chmod(0o440)
+        self.addCleanup(settings.unlink)
+        subprocess.run(['/usr/sbin/visudo', '-c'], check=True, capture_output=True)
+        subprocess.run(['/usr/bin/sudo', '-K'], user=11001, group=11001, extra_groups=[], check=True, capture_output=True)
+        child, grant = self.prepare(['/usr/bin/printf', 'approved'])
+        self.ticket(child, grant)
+        self.assertEqual(self.launch(child).returncode, 0)
+        result = subprocess.run(['/usr/bin/sudo', '-S', '-u', 'root', '--', '/usr/bin/touch', '/lab/effect'],
+                                user=11001, group=11001, extra_groups=[], input=b'', capture_output=True, timeout=5)
+        self.assertNotEqual(result.returncode, 0)
         self.assertFalse((ROOT / 'effect').exists())
 
     def test_sponsor_cannot_read_signing_key_or_modify_grants(self) -> None:

@@ -62,3 +62,18 @@ Two additional characterization tests bring this fixture to eleven tests, all pa
 - `test_known_limit_cached_authentication_skips_pam_without_a_ticket`: with global five-minute timestamps and `-k` omitted, an approved launch populated credentials that allowed a subsequent unsigned marker command. The positive rejection control using `-k` ignored that cache and blocked the unsigned launch.
 
 The original no-reusable-authentication result depends on the fixture settings and launcher flags. A production integration must enforce signed approval before every broker launch regardless of whether PAM runs, prevent relay authentication from warming general sudo credentials, and test both existing timestamps and NOPASSWD policies. These cases do not show a forged signature accepted by the module; they show the module being skipped. Ordinary pre-existing sudo permissions remain outside sudo-relay's interception scope.
+
+## Independent launch gate
+
+The default fixture path now calls a separate Rust `approval-gate` before releasing its waiting sponsor process. This root-only helper verifies the signed grant against a launch record retained separately by the controller, checks the waiting process's UID/start time, enforces the fixed sudo invocation including `-k`, and durably consumes a canonical nonce as `released`. PAM separately redeems the same grant as `consumed` if sudo requests authentication. No gate failure releases the process, and a consumed launch grant is never refunded after a lost child or denied sudo launch.
+
+The gate and PAM share signature/expiry/envelope verification. Ticket data cannot choose the controller's expected sponsor or command. The two original shortcut tests deliberately bypass the gate in the test harness to preserve evidence of why it is needed; the gate binary has no bypass option and refuses unprivileged callers. The fixture's root controller remains trusted and is not a production MCP or enrollment interface.
+
+On November 10, 2026, fifteen cases passed locally in 2.747 seconds. Four new tests establish:
+
+- With NOPASSWD active, missing, forged, expired, wrong-command and wrong-sponsor grants fail at the gate; a fresh valid grant executes and creates a release receipt even though PAM is skipped.
+- The gate accepts a grant once before process release. A second acceptance fails; losing the child after consumption does not permit a new process to reuse the nonce, even with a new signature.
+- A sponsor cannot invoke the root gate successfully. A signed invocation omitting the required `-k` flag is rejected.
+- With nonzero global timestamp caching configured, an approved gated launch does not warm the cache for a subsequent unsigned ordinary sudo command.
+
+The fixture now runs in the prototype branch's Linux CI. No production broker, installer, PAM host configuration or chat signer is changed by this work. Earlier sections describe the original feasibility runs; the independent-gate tests address those specific shortcut cases only. The command timing printed by the fixture excludes the new gate subprocess, so it is not a measurement of total gated-launch overhead.

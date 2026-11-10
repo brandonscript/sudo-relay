@@ -45,3 +45,15 @@ jobs:
           assert len(executables) == 1, executables
           subprocess.run(['sudo', executables[0], '--ignored', '--test-threads=1'], check=True)
           PYTEST
+  sudo-prototype:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build disposable native sudo fixture
+        run: docker compose -p sudo-relay-gate-ci -f security-lab/sudo-prototype/compose.yaml build
+      - name: Verify approval gate and native sudo behavior
+        run: docker compose -p sudo-relay-gate-ci -f security-lab/sudo-prototype/compose.yaml run --rm --no-deps prototype
+      - name: Remove disposable runtime
+        if: always()
+        run: docker compose -p sudo-relay-gate-ci -f security-lab/sudo-prototype/compose.yaml down --volumes --remove-orphans
