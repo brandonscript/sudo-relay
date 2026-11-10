@@ -32,7 +32,7 @@ struct Probe {
         print("Secure Enclave available: \(SecureEnclave.isAvailable)")
         print("Biometric authentication available: \(available)")
         print("Touch ID reported: \(touchID)")
-        if let error { print("Capability result: \(error.domain) \(error.code)") }
+        if let error { print("Capability result: \(errorSummary(error))") }
         capability.invalidate()
         guard arguments == ["--run"] else { return }
         guard available, SecureEnclave.isAvailable, touchID else {
@@ -46,8 +46,8 @@ struct Probe {
             try run()
             notice("Two signatures verified", "Nothing executed. Tell the researcher whether each request prompted for Touch ID.")
         } catch {
-            print("Experiment stopped without further attempts: \(error)")
-            notice("Experiment stopped", "No command ran. No fallback was attempted.\n\(error)")
+            print("Experiment stopped without further attempts: \(errorSummary(error))")
+            notice("Experiment stopped", "No command ran. No fallback was attempted.\n\(errorSummary(error))")
             exit(1)
         }
     }
@@ -91,7 +91,7 @@ struct Probe {
             } catch ProbeError.noninteractiveSigningSucceeded {
                 throw ProbeError.noninteractiveSigningSucceeded
             } catch {
-                print("Test \(sequence): noninteractive attempt produced no signature (\(error)).")
+                print("Test \(sequence): noninteractive attempt produced no signature (\(errorSummary(error))).")
             }
             blocked.invalidate()
 

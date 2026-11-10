@@ -1,6 +1,12 @@
 import CryptoKit
 import Foundation
 
+// Authentication errors can include biometric configuration metadata in userInfo.
+public func errorSummary(_ error: Error) -> String {
+    let error = error as NSError
+    return "\(error.domain) \(error.code)"
+}
+
 public struct Challenge: Encodable, Sendable {
     public let domain = "sudo-relay-touch-id-experiment-v1"
     public let id: UUID

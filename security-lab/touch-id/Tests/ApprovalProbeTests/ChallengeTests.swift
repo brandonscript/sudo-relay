@@ -3,6 +3,13 @@ import CryptoKit
 import Foundation
 import Testing
 
+@Test func errorReportingOmitsAuthenticationMetadata() {
+    let error = NSError(domain: "com.apple.LocalAuthentication", code: -1004, userInfo: [
+        "BiometryDatabaseHash": "private-test-canary", NSLocalizedDescriptionKey: "private-test-canary",
+    ])
+    #expect(errorSummary(error) == "com.apple.LocalAuthentication -1004")
+}
+
 @Test func signatureBindsTheExactRequest() throws {
     let now = Date(timeIntervalSince1970: 1000)
     let original = Challenge(sequence: 1, now: now)

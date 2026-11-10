@@ -6,7 +6,7 @@ The [approval host catalogue and verification record](approval-host/README.md#ru
 
 ## Native Touch ID experiment
 
-The [native probe catalogue](touch-id/README.md#checks-and-limits) distinguishes automated signature-binding/expiry checks from manual Secure Enclave enforcement, successive prompts and cancellation checks. The two software-key tests passed locally. A read-only capability query outside the process sandbox reported available Secure Enclave and Touch ID. The real signing trial requires user interaction; capability detection alone is not a hardware security test. There is no command-execution path or persistent key.
+The [native probe catalogue](touch-id/README.md#checks-and-limits) distinguishes automated signature-binding/expiry checks from manual Secure Enclave enforcement, successive prompts and cancellation checks. The two software-key tests passed locally. The first real run rejected both noninteractive signing attempts and verified both interactive signatures; user confirmation of distinct fingerprint prompts is pending. A third automated case checks that error logs omit authentication metadata. There is no command-execution path or persistent key.
 
 Record the tested source version, image ID, runtime limits, result, and evidence for every run. `PASS` means the expected rejection/control occurred, `VULNERABLE` means unauthorized capability was demonstrated, `ERROR` means the harness could not establish a result, and `NOT RUN` means no claim is made. Never relabel an expected limitation as a security pass.
 
