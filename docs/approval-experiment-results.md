@@ -22,10 +22,12 @@ Keep passkeys optional. On Mac, native Touch ID is a promising way to avoid fetc
 
 The next implementation decision is the trusted review boundary. A native helper must fetch an authenticated, frozen request and show the exact decision it signs; it must not accept arbitrary bytes from the agent. If review stays entirely in chat, first establish a protected host confirmation mechanism. A hidden key and a two-digit number do not provide that separation.
 
-Production integration still needs authenticated sponsor enrollment, a versioned verification format for WebAuthn/P-256 alongside the existing Ed25519 format, protected policy and recovery, native sudo policy enforcement, and real desktop/mobile handoff tests. The [production acceptance matrix](chat-approval-design.md#work-order-and-acceptance-tests) remains open. Cancellation/lockout on real biometric hardware and credential-provider recovery also remain untested.
+Production integration still needs authenticated sponsor enrollment, a versioned verification format for WebAuthn/P-256 alongside the existing Ed25519 format, protected policy and recovery, native sudo policy enforcement, and real desktop/mobile handoff tests. The [production acceptance matrix](chat-approval-design.md#work-order-and-acceptance-tests) remains open. Native review cancellation and expiry were subsequently tested as described below; biometric lockout and credential-provider recovery remain untested.
 
 This completes the research-and-prototype deliverable. It does not certify security, implement the production host, or authorize installation on a personal machine.
 
 ## Authenticated native review follow-up
 
 The [native review boundary lab](native-review-boundary.md) adds authority-authenticated review, a frozen output-sharing decision and a separately retained request/key verifier with one-use consumption. Ten native protocol/UI tests pass. After correcting layout and async lifecycle issues, the participant's screenshot and process log confirmed a Touch ID receipt and replay rejection. The new native review omits number entry and the extra success dialog. This remains one ordinary-user development process with ephemeral keys, not protected production deployment or chat integration.
+
+Native follow-up on November 10: twelve native checks now pass. Real hardware runs also covered Deny, fingerprint cancellation, review expiry and a signature returned after expiry; none created a receipt for the rejected request. Expected cancellation/expiry close quietly, with logs retained. The latest quiet-expiry UX and Close labels have automated coverage, with live visual checks pending. See the [native runbook](native-review-boundary.md) for individual evidence and the remaining protected-deployment gap.

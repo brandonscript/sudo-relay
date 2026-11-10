@@ -5,7 +5,7 @@ import LocalAuthentication
 import Security
 
 enum ProbeError: Error {
-    case unavailable, cancelled, noninteractiveSigningSucceeded, invalidSignature, invalidAccessControl
+    case unavailable, noninteractiveSigningSucceeded, invalidSignature, invalidAccessControl
 }
 
 @main
@@ -40,6 +40,8 @@ struct Probe {
             exit(1)
         }
         let app = NSApplication.shared
+        app.applicationIconImage = NSImage(systemSymbolName: "shield", accessibilityDescription: "sudo-relay test")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 128, weight: .regular))
         app.setActivationPolicy(.regular)
         app.activate(ignoringOtherApps: true)
         do {
@@ -47,7 +49,6 @@ struct Probe {
                 try runReviewTrial()
             } else {
                 try run()
-                notice("Two signatures verified", "Nothing executed. Tell the researcher whether each request prompted for Touch ID.")
             }
         } catch {
             print("Experiment stopped without further attempts: \(errorSummary(error))")
@@ -70,7 +71,10 @@ struct Probe {
             review.informativeText = "Nothing executes. This signs a fixed experiment request using a temporary Secure Enclave key. No sudo password is used.\n\nExact signed request:\n\(String(decoding: bytes, as: UTF8.self))\n\nThe key's encrypted representation stays in this process and is discarded on exit."
             review.addButton(withTitle: "Sign test request")
             review.addButton(withTitle: "Cancel")
-            guard review.runModal() == .alertFirstButtonReturn else { throw ProbeError.cancelled }
+            guard review.runModal() == .alertFirstButtonReturn else {
+                print("Review cancelled: no further requests; nothing executed.")
+                return
+            }
             if keyData == nil { keyData = try makeBiometricKey() }
             guard let keyData else { throw ProbeError.unavailable }
             let signature = try signWithBiometrics(bytes, keyData: keyData, reason: "Sign sudo-relay harmless test \(sequence) of 2")
