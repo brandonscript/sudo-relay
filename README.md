@@ -6,6 +6,8 @@ sudo-relay adds a signed approval step when an agent needs privileged access. Yo
 
 **Alpha software. Not independently audited. Use a disposable machine and throwaway credentials.** Read the [security status and open questions](#security-status) before installing a privileged service.
 
+Before a real-machine trial, read the [pre-trial review and outstanding blockers](docs/pre-trial-review.md). The native-sudo prototype is separate from the shipped broker.
+
 ## Supported clients
 
 The included reference host demonstrates an approval card inside a small chat-style page. Other clients need the trusted host adapter; ordinary MCP support or MCP Apps rendering alone cannot authorize execution. No existing commercial chat client is claimed to be supported.

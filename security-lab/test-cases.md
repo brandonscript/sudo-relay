@@ -125,3 +125,9 @@ Run these cases only in disposable machines with fake accounts and credentials. 
 ### Native sudo prototype result
 
 An isolated Linux experiment now covers signed one-use PAM authentication, two sponsor identities and native sudo attribution, revocation between signing and launch, exact command-policy denial, absent/invalid/expired/mismatched approvals, cross-process replay, consumed nonce reuse, lack of reusable authentication, and signer-key/grant access denial. All nine cases passed. Source and exact exclusions: [prototype test record](https://github.com/brandonscript/sudo-relay/tree/4b86659/security-lab/sudo-prototype). This is separate from the production broker; the planned enrollment/integration cases above are still pending.
+
+## Pre-trial review follow-up
+
+The [pre-trial review](../docs/pre-trial-review.md) records blockers and concrete acceptance cases for installer provenance, per-sudoer enrollment, group/account revocation, native authentication shortcuts, real host signing, installation rollback, macOS ACLs, script policy, OS output logging, crash recovery, timeout resources and audit correlation.
+
+Two additional native-sudo characterization tests are implemented at [prototype commit a134db5](https://github.com/brandonscript/sudo-relay/tree/a134db5/security-lab/sudo-prototype). They demonstrate that NOPASSWD can skip PAM and that omitting cache isolation with nonzero timestamps can allow subsequent unsigned execution. These tests deliberately assert the observed unsupported behavior. All eleven prototype tests passed; the corresponding combined broker defenses remain unimplemented.
