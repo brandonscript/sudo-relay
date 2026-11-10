@@ -29,7 +29,7 @@ This project has automated checks and a local code review. It has not had an ind
 
 The [test catalogue](security-lab/test-cases.md) describes the cases, expected results and exclusions. The [verification record](docs/verification.md#sudo-relay-source-alpha) records local and hosted runs. Root-broker tests passed in the disposable Linux fixture and on GitHub-hosted Linux/macOS runners. The full MCP integration runs without root; hosted root tests do not validate service installation or a production signing host.
 
-**Confirmed limitation of the receipt-only chat probe:** in a [live Codex test](docs/mcp-host-boundary-results.md), the agent read private card data and approved a request through the expanded MCP Apps card without the person approving it. Nothing executed. Hiding data from model-facing tool results and requiring a number plus a button did not protect this card from agent computer use. Production signing integration remains unfinished; this finding does not demonstrate a bypass of native permission prompts, passkeys or Touch ID.
+**Confirmed limitation of the receipt-only chat probe:** in a [live Codex test](docs/mcp-host-boundary-results.md), the agent read private card data and approved a request through the expanded MCP Apps card without the person approving it. Approval also succeeded after the operator reported switching “Any App” off; the MCP Apps browser route remained available in that session. Nothing executed. Hiding data from model-facing tool results and requiring a number plus a button did not protect this card from agent computer use. Production signing integration remains unfinished; this finding does not demonstrate a bypass of native permission prompts, passkeys or Touch ID.
 
 ### What we have not established
 
