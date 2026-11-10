@@ -2,7 +2,7 @@
 
 Local verification on November 9, 2026. This is implementation evidence, not an independent security audit.
 
-## Completed
+## Initial verification
 
 - macOS: Rust formatting, Clippy with warnings denied, 19 non-privileged Rust tests, strict TypeScript checks including the end-to-end harness, eight TypeScript tests, and UI build.
 - Real stdio MCP integration: initialize, list exactly three non-approval tools, read the inline resource, create a request, reconstruct CBOR in TypeScript, sign with a throwaway Ed25519 key, consume once, return output, reject replay, and reject approval after cancellation.
@@ -22,11 +22,11 @@ A bounded Ponytail review found and fixed:
 
 The documentation pass compared the owner's Shrinx/fixm4b README structure with this README, checked implemented CLI forms and service paths, separated installation from protocol internals, and removed claims of generic client support. Examples requiring administrative installation remain instructions rather than actions performed on the host.
 
-## Not verified
+## Not verified at initial review
 
 No privileged installation on the user's Mac, systemd/launchd service lifecycle test, real mobile device, existing commercial chat-client adapter, release workflow execution, artifact signing, or public publication. The CI matrix schedules Linux and macOS checks including disposable root tests, but a local workflow file is not evidence that hosted CI ran.
 
-The approving host/browser must remain outside agent process and computer-control access. The reference same-user demo does not provide that isolation. Independent review and a verified production host integration remain release prerequisites.
+The approving host/browser must remain outside agent process and computer-control access. The reference same-user demo does not provide that isolation. Independent review and a verified production host integration remain prerequisites for release artifacts.
 
 ## Approval window and presentation follow-up
 
@@ -92,8 +92,6 @@ The rename review traced the protocol domains through both encoders, shared vect
 
 Preliminary naming checks found an unrelated three-file JavaScript/Gun relay at `rip-monkey-nko/sudo-relay`. The chosen owner/repository path was available. npm returned no package at the exact name; the crates.io lookup was blocked (HTTP 403). These checks are not trademark clearance. No registry packages or signed release artifacts are being published.
 
-The first hosted run passed both normal Linux/macOS jobs but exposed a fixture setup error on Linux: a peer running as the test UID could not traverse the runner's private checkout path to execute the test helper. The helper is now copied into the disposable root-owned test directory before dropping privileges. The macOS fixture uses `/private/var` rather than assuming `/var/lib` exists. CI now requires exactly one root test executable and lets both OS jobs finish independently. This changes test setup, not broker authorization.
+Hosted checks exposed three test-fixture assumptions, now corrected: unprivileged peers could not traverse the runner's private checkout, clearing groups after setting GID left the macOS peer in group 0, and root's macOS temporary directory was private rather than world-writable. The fixture now copies its helper into its root-owned test directory, sets groups before dropping UID and asserts the resulting GID, and creates an explicitly writable ancestor for the symlink case. No broker authorization or socket permissions were relaxed. CI requires exactly one root test executable and lets both OS jobs finish independently.
 
-The macOS rerun exposed a second fixture issue: the spawned peer had UID 10001 but effective GID 0, while the socket correctly required group 10001. The test now sets its supplementary group and GID before dropping UID, and asserts the resulting GID. Temporary diagnostics were removed. No socket permissions or authorization rules were relaxed.
-
-The next macOS run passed the identity, key-access, approval and replay checks, then caught an assumption in the path test: macOS can give root a private temporary directory. The symlink case now creates an explicitly world-writable directory inside the disposable fixture, so it tests the intended unsafe ancestor on both operating systems.
+Both privileged jobs passed on [GitHub-hosted Linux and macOS runners](https://github.com/brandonscript/sudo-relay/actions/runs/42763629898) at commit `d843894`. Both normal jobs also passed formatting, Clippy, Rust tests, TypeScript checks/tests/build and MCP integration; all four jobs finished successfully. The privileged jobs exercise a real root broker, separate peer identities, protected-key access, signed execution, replay rejection and unsafe-path rejection. They do not install systemd/launchd services, verify macOS ACL handling, or supply a production human approval/signing integration. The source alpha is public; registry packages and signed release artifacts remain unpublished.

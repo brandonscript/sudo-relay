@@ -23,7 +23,7 @@ This project has automated checks and a local code review. It has not had an ind
 - Output sharing on and off, including requests where the agent says it needs output. With sharing off, the tested stdout/stderr and raw diagnostics were withheld. Later opt-in did not disclose earlier withheld output.
 - Unit and integration checks for invalid signatures, expiry, cancellation, concurrent consumption, restart state transitions, input/output limits, and Rust/TypeScript agreement on signed bytes. UI checks cover the code field and remembered sharing choice. These are specific checks, not coverage of every race or failure mode.
 
-The [test catalogue](security-lab/test-cases.md) describes the cases, expected results and exclusions. The [verification record](docs/verification.md#per-request-output-sharing) records local runs. Root execution has been tested in the disposable Linux fixture; the real MCP integration on macOS ran without root. A CI workflow in the repository is not evidence that hosted CI has run.
+The [test catalogue](security-lab/test-cases.md) describes the cases, expected results and exclusions. The [verification record](docs/verification.md#sudo-relay-source-alpha) records local and hosted runs. Root-broker tests passed in the disposable Linux fixture and on GitHub-hosted Linux/macOS runners. The full MCP integration runs without root; hosted root tests do not validate service installation or a production signing host.
 
 ### What we have not established
 
