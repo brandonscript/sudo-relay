@@ -91,6 +91,8 @@ Later on November 10, the user selected the installed plugin in this Codex conve
 
 **Result: connectivity positive control passed.** Card visibility and the click were user-reported; the state/count/digest were independently read through the live MCP tool. No command executed. The host app version and permission settings were not captured, and button appearance was not independently inspected. Creation-result metadata was deliberately omitted from the assistant's displayed diagnostic output, so this run does **not** establish that the model cannot access it. Direct invocation of the hidden tool, automated card operation, replay through the live host and canary secrecy remain untested. An absent approval tool in discovery alone is not proof of authorization enforcement.
 
+The subsequent [live boundary-check record](../../docs/mcp-host-boundary-results.md) separately documents full tool-response inspection and an attempted direct approval call, with the remaining computer-use test and limitations.
+
 ## Remove it
 
 Disable/uninstall **sudo-relay-host-probe** in the desktop app, then remove its source:
