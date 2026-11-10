@@ -1,0 +1,24 @@
+{
+  "name": "sudo-relay-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc && node build.mjs",
+    "check": "tsc --noEmit && tsc --noEmit -p tsconfig.integration.json",
+    "test": "tsx --test test/*.test.ts",
+    "demo": "tsx src/demo.ts",
+    "keygen": "tsx src/keygen.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^2.0.4",
+    "cborg": "^4.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "license": "MIT"
+}

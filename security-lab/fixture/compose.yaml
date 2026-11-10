@@ -1,0 +1,24 @@
+services:
+  sandbox:
+    build:
+      context: ../..
+      dockerfile: security-lab/fixture/Dockerfile
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID, FOWNER, KILL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 1
+    tmpfs:
+      - /lab:rw,nosuid,nodev,noexec,size=16m,mode=0755
+      - /tmp:rw,nosuid,nodev,noexec,size=8m,mode=1777
+    environment:
+      PE_DISPOSABLE_FIXTURE: '1'
+    healthcheck:
+      test: [CMD, python, -c, "from pathlib import Path; raise SystemExit(not Path('/lab/run/broker.sock').is_socket())"]
+      interval: 1s
+      timeout: 2s
+      retries: 15
+    stop_grace_period: 2s

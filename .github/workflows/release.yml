@@ -1,0 +1,56 @@
+name: Draft release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing reviewed version tag (v0.x.y)
+        required: true
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: cargo test --locked && cargo build --release --locked
+      - run: npm ci && npm run check && npm test && npm run build
+        working-directory: ui
+      - name: Package
+        run: tar -czf "experimental-${{ runner.os }}-${{ runner.arch }}.tar.gz" -C target/release broker mcp-server -C ../../ui/dist card.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ runner.os }}
+          path: experimental-*.tar.gz
+  sign:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          merge-multiple: true
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign and create draft
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -f RELEASE_READY
+          printf '%s' "$RELEASE_TAG" | rg '^v[0-9]+\.[0-9]+\.[0-9]+$'
+          sha256sum experimental-*.tar.gz > SHA256SUMS
+          cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
+          gh release create "$RELEASE_TAG" --draft --verify-tag --title "$RELEASE_TAG (experimental)" --generate-notes experimental-*.tar.gz SHA256SUMS SHA256SUMS.sigstore.json

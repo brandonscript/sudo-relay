@@ -1,0 +1,42 @@
+name: Checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  check:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+      - run: npm ci && npm run check && npm test && npm run build
+        working-directory: ui
+      - run: node --import ./ui/node_modules/tsx/dist/loader.mjs scripts/integration.mts
+  privileged:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked --test privileged --no-run --message-format=json > /tmp/privileged-test-build.json
+      - name: Run only the built root test executable
+        run: |
+          python3 - <<'PYTEST'
+          import json, subprocess
+          for line in open('/tmp/privileged-test-build.json'):
+              item = json.loads(line)
+              if item.get('executable') and item.get('target', {}).get('name') == 'privileged':
+                  subprocess.run(['sudo', item['executable'], '--ignored', '--test-threads=1'], check=True)
+          PYTEST

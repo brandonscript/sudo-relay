@@ -1,0 +1,18 @@
+[Unit]
+Description=sudo-relay approval broker (experimental)
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/libexec/sudo-relay/broker serve /etc/sudo-relay/config.json
+User=root
+Group=root
+UMask=0077
+Restart=on-failure
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+# Approved commands need real host root; this service is not a command sandbox.
+
+[Install]
+WantedBy=multi-user.target
