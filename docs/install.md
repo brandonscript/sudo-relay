@@ -4,6 +4,24 @@ Production requires different agent and approver user IDs. The included HTTP hos
 
 Use a disposable Linux or macOS machine first. These are administrator instructions, not an automatic installer.
 
+## First-time setup and passwords
+
+The MCP server never receives a sudo password. An administrator runs the installation commands in their own terminal and authenticates through the operating system when prompted. Do not paste a password into chat, MCP settings, environment variables, or this broker's configuration. The installed broker runs as root under systemd or launchd; individual executions are authorized by signed human approvals rather than another sudo login.
+
+Setup currently requires manual administrator steps: create separate agent and approving-host identities and a socket group, install and initialize the broker, pair the approving host's public key, start the service, then configure the unprivileged MCP server. Pin the broker's machine UUID in the trusted host. A protected production human approval/signing integration is still required; the included browser host only previews requests. Installing the MCP entry alone does not complete live setup.
+
+Changing your login/sudo password does not require re-pairing or updating sudo-relay. Removing an account's sudo privileges also does not revoke its separately configured broker access. To withdraw access, stop the broker or change its authorized identities; revoke the approving key when appropriate. Password changes are not a substitute for key revocation after suspected compromise.
+
+## Account changes and recovery
+
+The current broker always executes approved commands as root (UID 0). There is no configurable target user or per-command “run as” account. Agent and approver accounts are unprivileged client identities, not execution accounts.
+
+Authorization uses numeric `agent_uid` and `approver_uid`, plus `socket_gid`, rather than login names. Renaming an account while keeping its numeric IDs leaves broker authorization unchanged. For a replacement account or changed IDs, stop the broker, update the root-owned configuration and socket-group membership, and restart it. Update the MCP service identity or trusted-host configuration as needed. Restart cancels pending requests; consumed/running requests are marked uncertain and are never automatically relaunched. Existing keys remain trusted until explicitly revoked.
+
+Before deleting an authorized account, remove its broker access. Reusing its numeric UID for another account could give that replacement the old account's client role. Never transfer an approving private key to agent-accessible storage.
+
+For a lost or compromised approving device, revoke its key using the administrator command below, generate a new key on the replacement trusted host, and pair the new public key. Lost keys cannot be recovered from the broker: it holds only public keys. Recovery requires OS administrator access; the agent cannot approve its own re-pairing.
+
 ## Prepare the machine
 
 Build with `cargo build --release --locked` and build the UI as described in the README. Install the broker as a root-owned executable, outside any agent-writable directory:
