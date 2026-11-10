@@ -2,6 +2,8 @@
 
 November 10, 2026. Production design proposal with an isolated, unprivileged experiment. Checked against main commit `41dd810`, the installed MCP Apps types, and the official sources linked below. The experiment does not implement a production signing boundary.
 
+The [experiment results](approval-experiment-results.md) map the completed research to its evidence, including real 1Password and Touch ID trials, and separate it from the production work below.
+
 ## Recommendation
 
 The desired experience remains approval in chat without fetching a phone or opening another app. The [Touch ID and fallback review](biometric-approval.md) evaluates local passkeys and a native macOS helper against that requirement. The separate review page below is an experiment and a possible compatibility fallback, not an accepted mandatory user flow.
@@ -100,4 +102,4 @@ Research, design, the fake-command fixture and automated negative cases can proc
 
 Before adopting the fallback, decide whether a brief trusted review page outside chat is acceptable. Session mode remains an explicit option for people who do not want passkeys; it must not inherit claims of independent human-presence verification. If all-inline approval is required, verify the real host's confirmation boundary before connecting it to root execution. Never present a conveniently hidden private key as proof of human consent.
 
-Not checked here: real ChatGPT capability probes, physical authenticator behavior, tunnel account access, production Rust WebAuthn library suitability, installer provenance or native authentication changes. The local experiment does not clear the project for live root use.
+Not checked here: a real ChatGPT MCP card/signing boundary, tunnel account access, production Rust WebAuthn library suitability, installer provenance or native sudo authentication integration. Real 1Password approval and two Touch ID signatures were subsequently observed in the isolated experiments; broader physical authenticator behavior remains unverified. The local experiment does not clear the project for live root use.
