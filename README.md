@@ -8,6 +8,8 @@ sudo-relay adds a signed approval step when an agent needs privileged access. Yo
 
 Before a real-machine trial, read the [pre-trial review and outstanding blockers](docs/pre-trial-review.md). The native-sudo prototype is separate from the shipped broker.
 
+The [chat approval design](docs/chat-approval-design.md) covers optional passkeys and the weaker guarantees of approval through a logged-in session. Try both in the [unprivileged approval experiment](security-lab/approval-host/README.md): it creates receipts only and cannot execute commands. Production host integration remains unfinished.
+
 ## Supported clients
 
 The included reference host demonstrates an approval card inside a small chat-style page. Other clients need the trusted host adapter; ordinary MCP support or MCP Apps rendering alone cannot authorize execution. No existing commercial chat client is claimed to be supported.

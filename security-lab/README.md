@@ -1,5 +1,7 @@
 # Disposable security lab
 
+For browser approval with optional passkeys and **no command execution**, use the [approval host experiment](approval-host/README.md). Its session-mode and compromised-display cases document limitations as well as rejection behavior.
+
 For a small, idle environment with no attack runner, use the [disposable broker fixture](fixture/README.md). The older harness below contains pre-fix exploit expectations and is not the default fixture.
 
 Attack the experimental broker without installing it on your machine.

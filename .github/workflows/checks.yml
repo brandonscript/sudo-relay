@@ -3,6 +3,21 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  approval-host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+        working-directory: ui
+      - run: npm ci && npm run check
+        working-directory: security-lab/approval-host
+      - run: npx playwright install --with-deps chromium
+        working-directory: security-lab/approval-host
+      - run: npm test
+        working-directory: security-lab/approval-host
   check:
     strategy:
       fail-fast: false
