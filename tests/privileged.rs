@@ -4,7 +4,7 @@ use std::{
     collections::BTreeMap,
     fs,
     os::unix::{
-        fs::{symlink, MetadataExt, PermissionsExt},
+        fs::{symlink, PermissionsExt},
         process::CommandExt,
     },
     path::PathBuf,
@@ -31,7 +31,8 @@ impl Drop for Cleanup {
     }
 }
 fn probe(config: &Config, uid: u32, operation: &str, request: Option<&str>) {
-    let status = Process::new(config.socket.parent().unwrap().join("peer-probe"))
+    let mut command = Process::new(config.socket.parent().unwrap().join("peer-probe"));
+    command
         .args([
             "--ignored",
             "--exact",
@@ -41,11 +42,18 @@ fn probe(config: &Config, uid: u32, operation: &str, request: Option<&str>) {
         .env("PE_CONFIG", serde_json::to_string(config).unwrap())
         .env("PE_OPERATION", operation)
         .env("PE_APPROVAL", request.unwrap_or(""))
-        .current_dir("/")
-        .uid(uid)
-        .gid(config.socket_gid)
-        .status()
-        .unwrap();
+        .current_dir("/");
+    let gid = config.socket_gid;
+    // Set groups before dropping UID; clearing them afterward resets the GID on macOS.
+    unsafe {
+        command.pre_exec(move || {
+            if libc::setgroups(1, &gid) != 0 || libc::setgid(gid) != 0 || libc::setuid(uid) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let status = command.status().unwrap();
     assert!(status.success(), "unprivileged peer probe failed");
 }
 #[test]
@@ -161,6 +169,7 @@ fn unprivileged_peer_probe() {
     };
     assert_ne!(unsafe { libc::geteuid() }, 0);
     let config: Config = serde_json::from_str(&raw).unwrap();
+    assert_eq!(unsafe { libc::getegid() }, config.socket_gid);
     assert!(fs::read(config.state_dir.join("keys/test.pub")).is_err());
     assert!(fs::write(config.state_dir.join("keys/evil.pub"), "evil").is_err());
     let signing_key = config.socket.parent().unwrap().join("host/host.key");
@@ -184,17 +193,7 @@ fn unprivileged_peer_probe() {
         return;
     }
     if op == "request" || op == "save_pending" {
-        let value =
-            transport::call(&config.socket, &Request::RequestExecution { spec }).unwrap_or_else(
-                |error| {
-                    let socket = fs::metadata(&config.socket).unwrap();
-                    panic!(
-                    "[DEBUG-socket] {error:#}; peer uid={} gid={}; socket uid={} gid={} mode={:o}",
-                    unsafe { libc::geteuid() }, unsafe { libc::getegid() },
-                    socket.uid(), socket.gid(), socket.mode()
-                );
-                },
-            );
+        let value = transport::call(&config.socket, &Request::RequestExecution { spec }).unwrap();
         if op == "save_pending" {
             fs::write(
                 std::env::var("PE_APPROVAL").unwrap(),
