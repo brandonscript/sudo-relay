@@ -57,6 +57,8 @@ npm test
 
 Playwright opens isolated Chromium profiles. Where the browser cache is restricted, set `PLAYWRIGHT_BROWSERS_PATH` to a writable temporary directory for both installation and testing. Browser startup may also require permission to run outside a restricted process sandbox; it still runs as your ordinary account.
 
+The suite also builds the UI and runs four [desktop probe](../mcp-host-probe/README.md) card checks through a synthetic MCP Apps bridge: Enter/Approved, denial, invalid metadata and server rejection. These are separate from the passkey/session cases below and do not test the actual ChatGPT host.
+
 | Case | What it checks | What it does not establish |
 |---|---|---|
 | G1 | A fresh browser without the setup session shows an error and no enrollment/request controls. | Production account login or cross-browser session sharing. |

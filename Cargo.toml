@@ -5,6 +5,14 @@ edition = "2021"
 license = "MIT"
 publish = false
 
+[features]
+host-probe = []
+
+[[bin]]
+name = "mcp-host-probe"
+path = "security-lab/mcp-host-probe/server.rs"
+required-features = ["host-probe"]
+
 [dependencies]
 anyhow = "1"
 ciborium = "0.2"

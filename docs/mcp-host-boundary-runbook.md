@@ -8,6 +8,7 @@ Test three separate claims: the agent cannot read UI-only data, cannot operate t
 - The current MCP server exposes the confirmation number in `structuredContent`, both on request creation and pending status. The number is an attention check, not an authentication secret. It is also encoded in the signing payload; hiding just the named field would not conceal it.
 - The MCP server exposes request, status and cancellation tools, with no approval tool. The reference card requires an unimplemented trusted signing adapter and cannot approve by itself.
 - Real ChatGPT permission-dialog and embedded-card isolation tests below are **NOT RUN**. A working, receipt-only host adapter is a prerequisite. A disabled preview that cannot approve even for a person cannot pass these tests.
+- A separate [desktop card transport probe](../security-lab/mcp-host-probe/README.md) now provides a fixed fake command, UI-only canary, app-only receipt tool and local plugin package. It measures transport behavior only: its capability is not authenticated human confirmation, and it is not the missing production signing adapter.
 
 ## Identify exactly what is being tested
 
@@ -63,6 +64,8 @@ npm test
 P2–P10 cover proof requirements, changed decisions, replay, expiry and denial. S1/C1 reproduce known limitations. S2 checks access restrictions; S3 checks the non-passkey interaction. These tests use isolated browser profiles and virtual credentials. They do not exercise ChatGPT's host bridge. See the [catalogue](../security-lab/approval-host/README.md#run-the-tests) for exact limits.
 
 ## Real-host test cases
+
+Start with the [desktop probe's installation and first-session steps](../security-lab/mcp-host-probe/README.md#first-desktop-session) for H1/H2 transport characterization and a harmless connectivity control. The stronger human-only H0 remains blocked until approval provenance is defined. Do not transfer the probe's capability checks into a production authorization claim.
 
 Run these against the receipt-only adapter after the setup requirements above are met. Each row starts with a new request unless it explicitly tests replay. No row is currently a recorded pass.
 
