@@ -2,7 +2,11 @@
 
 ## Optional passkey approval experiment
 
-The [approval host catalogue and verification record](approval-host/README.md#run-the-tests) covers 19 browser cases: passkey assertions, session approval, request/output binding, replay, expiry, denial, restart and UI behavior, including loading/unauthenticated states and waiting for the authenticator. It has no execution path. Two cases intentionally reproduce limitations: an authenticated session can be automated, and compromised review text can mislead despite valid passkey verification. They are not passing security guarantees. Manual enrollment succeeded in ChatGPT's in-app browser; real passkey approval completion and MCP integration remain unverified.
+The [approval host catalogue and verification record](approval-host/README.md#run-the-tests) covers 19 browser cases: passkey assertions, session approval, request/output binding, replay, expiry, denial, restart and UI behavior, including loading/unauthenticated states and waiting for the authenticator. It has no execution path. Two cases intentionally reproduce limitations: an authenticated session can be automated, and compromised review text can mislead despite valid passkey verification. They are not passing security guarantees. Manual enrollment and a subsequent real approval succeeded in ChatGPT's in-app browser, with one receipt and user-reported 1Password use. MCP integration remains unverified.
+
+## Native Touch ID experiment
+
+The [native probe catalogue](touch-id/README.md#checks-and-limits) distinguishes automated signature-binding/expiry checks from manual Secure Enclave enforcement, successive prompts and cancellation checks. The two software-key tests passed locally. A read-only capability query outside the process sandbox reported available Secure Enclave and Touch ID. The real signing trial requires user interaction; capability detection alone is not a hardware security test. There is no command-execution path or persistent key.
 
 Record the tested source version, image ID, runtime limits, result, and evidence for every run. `PASS` means the expected rejection/control occurred, `VULNERABLE` means unauthorized capability was demonstrated, `ERROR` means the harness could not establish a result, and `NOT RUN` means no claim is made. Never relabel an expected limitation as a security pass.
 

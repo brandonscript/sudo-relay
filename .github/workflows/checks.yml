@@ -35,6 +35,10 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
+      - name: Check isolated Touch ID experiment without hardware authentication
+        if: runner.os == 'macOS'
+        run: swift test -Xswiftc -warnings-as-errors
+        working-directory: security-lab/touch-id
       - run: npm ci && npm run check && npm test && npm run build
         working-directory: ui
       - run: node --import ./ui/node_modules/tsx/dist/loader.mjs scripts/integration.mts

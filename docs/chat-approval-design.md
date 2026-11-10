@@ -4,6 +4,8 @@ November 10, 2026. Production design proposal with an isolated, unprivileged exp
 
 ## Recommendation
 
+The desired experience remains approval in chat without fetching a phone or opening another app. The [Touch ID and fallback review](biometric-approval.md) evaluates local passkeys and a native macOS helper against that requirement. The separate review page below is an experiment and a possible compatibility fallback, not an accepted mandatory user flow.
+
 Keep passkeys optional. The [approval experiment](../security-lab/approval-host/README.md) now offers passkey and session modes, with no command-execution path. For the eventual integration, keep command preview/status in chat and test a separate trusted review page. Start with a review environment the agent cannot operate or modify.
 
 This is the most promising fallback found in this research, not a verified ChatGPT integration. It changes the original all-inline experience: the person may briefly leave the card and confirm with their authenticator. No sudo password enters chat. If entirely inline approval is essential, it remains blocked on a demonstrated host capability that protects both review and authorization.
