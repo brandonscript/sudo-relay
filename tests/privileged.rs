@@ -4,7 +4,7 @@ use std::{
     collections::BTreeMap,
     fs,
     os::unix::{
-        fs::{symlink, PermissionsExt},
+        fs::{symlink, MetadataExt, PermissionsExt},
         process::CommandExt,
     },
     path::PathBuf,
@@ -184,7 +184,17 @@ fn unprivileged_peer_probe() {
         return;
     }
     if op == "request" || op == "save_pending" {
-        let value = transport::call(&config.socket, &Request::RequestExecution { spec }).unwrap();
+        let value =
+            transport::call(&config.socket, &Request::RequestExecution { spec }).unwrap_or_else(
+                |error| {
+                    let socket = fs::metadata(&config.socket).unwrap();
+                    panic!(
+                    "[DEBUG-socket] {error:#}; peer uid={} gid={}; socket uid={} gid={} mode={:o}",
+                    unsafe { libc::geteuid() }, unsafe { libc::getegid() },
+                    socket.uid(), socket.gid(), socket.mode()
+                );
+                },
+            );
         if op == "save_pending" {
             fs::write(
                 std::env::var("PE_APPROVAL").unwrap(),
