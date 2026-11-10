@@ -14,7 +14,7 @@ function element<T extends HTMLElement>(id: string): T {
   if (!value) throw new Error(`Missing element: ${id}`);
   return value;
 }
-const app = new App({ name: 'sudo-relay-host-probe', version: '0.1.6' }, { availableDisplayModes: ['inline'] });
+const app = new App({ name: 'sudo-relay-host-probe', version: '0.1.7' }, { availableDisplayModes: ['inline'] });
 const input = element<HTMLInputElement>('number');
 const approve = element<HTMLButtonElement>('approve');
 const deny = element<HTMLButtonElement>('deny');
@@ -45,6 +45,7 @@ function show(value: unknown, metadata: unknown): void {
       typeof request.expires_at !== 'number' || !Number.isSafeInteger(request.expires_at) ||
       !/^[0-9]{2}$/.test(string(hidden.number)) || !/^[a-f0-9]{64}$/.test(string(hidden.capability)) ||
       !/^[a-f0-9]{32}$/.test(string(hidden.canary))) throw new Error('Invalid pending probe');
+  element('machine').textContent = `${string(request.machine)} · ${string(request.operating_system)} · ${string(request.account)}`;
   element('command').textContent = string(request.command);
   element('digest').textContent = string(request.digest);
   element('request-id').textContent = id;

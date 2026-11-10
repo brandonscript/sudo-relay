@@ -1,4 +1,6 @@
 //! Receipt-only transport probe. Deliberately has no broker, signer or command runner.
+mod host_info;
+
 use rand::{rngs::OsRng, Rng, RngCore};
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -15,7 +17,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const URI: &str = "ui://sudo-relay-host-probe/inline-v4.html";
+const URI: &str = "ui://sudo-relay-host-probe/inline-v5.html";
 const COMMAND: &str = "/usr/bin/printf 'Receipt only; nothing executes\\n'";
 fn now() -> u64 {
     SystemTime::now()
@@ -41,6 +43,7 @@ struct Id {
     id: String,
 }
 struct Request {
+    operating_system: String,
     id: String,
     expires_at: u64,
     digest: String,
@@ -54,14 +57,17 @@ impl Request {
     fn new(at: u64) -> Self {
         let id = uuid::Uuid::new_v4().to_string();
         let expires_at = at + 300;
+        let operating_system = host_info::operating_system();
         let digest = hex::encode(Sha256::digest(
             serde_json::to_vec(&json!({
                 "id": id, "expires_at": expires_at, "command": COMMAND,
-                "mode": "receipt-only", "share_output": false
+                "mode": "receipt-only", "share_output": false,
+                "machine": "local-receipt-lab", "operating_system": operating_system, "account": "test-user"
             }))
             .expect("fixed JSON"),
         ));
         Self {
+            operating_system,
             id,
             expires_at,
             digest,
@@ -79,7 +85,8 @@ impl Request {
     }
     fn public(&self) -> Value {
         json!({"id":self.id,"expires_at":self.expires_at,"digest":self.digest,
-            "command":COMMAND,"state":self.state,"share_output":false})
+            "command":COMMAND,"state":self.state,"share_output":false,
+            "machine":"local-receipt-lab","operating_system":self.operating_system,"account":"test-user"})
     }
     fn approve(&mut self, input: &Decision, at: u64) -> Result<(), &'static str> {
         self.expire(at);
@@ -253,7 +260,7 @@ impl ServerHandler for Server {
     fn get_info(&self) -> ServerInfo {
         ServerInfo { instructions:Some("Local receipt-only MCP Apps transport experiment. No commands execute. Never request real credentials. UI-only metadata and app-only tools are being tested, not assumed secure.".into()),
             capabilities:ServerCapabilities::builder().enable_tools().enable_resources().build(),
-            server_info:Implementation {name:"sudo-relay-host-probe".into(),version:"0.1.6".into(),..Default::default()},..Default::default() }
+            server_info:Implementation {name:"sudo-relay-host-probe".into(),version:"0.1.7".into(),..Default::default()},..Default::default() }
     }
     async fn list_resources(
         &self,

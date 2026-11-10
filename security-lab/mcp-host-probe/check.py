@@ -1,4 +1,5 @@
 """Exercise the real stdio probe as an operator, never as evidence of host isolation."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -47,6 +48,12 @@ try:
     public = created["structuredContent"]
     assert public["variant"] == "inline-only-v1"
     assert hidden["canary"] not in json.dumps(public) and hidden["capability"] not in json.dumps(public)
+    assert public["request"]["machine"] == "local-receipt-lab"
+    assert public["request"]["account"] == "test-user"
+    assert public["request"]["operating_system"]
+    frozen = {key: public["request"][key] for key in ("id", "expires_at", "command", "machine", "operating_system", "account", "share_output")}
+    frozen["mode"] = "receipt-only"
+    assert hashlib.sha256(json.dumps(frozen, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest() == public["request"]["digest"]
     request_id = public["request"]["id"]
     approval = {"id": request_id, "number": hidden["number"], "capability": hidden["capability"]}
     assert call("new_probe", {})["isError"] is True
@@ -63,7 +70,7 @@ try:
     denied = call("cancel_probe", {"id": second_id})
     assert denied["structuredContent"]["request"]["state"] == "denied"
     assert denied["structuredContent"]["receipt_count"] == 1
-    print(json.dumps({"probe_protocol": "passed", "replay_and_cross_request": "rejected", "raw_capability_holder": "can approve (expected limitation)", "desktop_host_boundary": "not tested", "commands_executed": 0}))
+    print(json.dumps({"probe_protocol": "passed", "replay_and_cross_request": "rejected", "raw_capability_holder": "can approve (expected limitation)", "desktop_host_boundary": "not tested", "commands_executed": 0, "display_os": public["request"]["operating_system"]}))
 finally:
     selector.close()
     process.terminate()

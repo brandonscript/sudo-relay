@@ -27,7 +27,7 @@ public final class NativeReviewForm: NSView {
         expiry.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
         expiry.setAccessibilityLabel("Approval time remaining")
         addSubview(expiry)
-        label("\(review.request.machine) · Receipt only · No commands run", frame: NSRect(x: 24, y: 77, width: 532, height: 22), muted: true)
+        label("\(review.request.machine) · \(review.request.operatingSystem) · \(review.request.account)", frame: NSRect(x: 24, y: 77, width: 532, height: 22), muted: true)
         label("What you’re approving", frame: NSRect(x: 24, y: 116, width: 532, height: 22), muted: true)
         let purpose = label("Record one signed test receipt for the command below. Nothing runs.", frame: NSRect(x: 24, y: 144, width: 532, height: 40))
         purpose.font = .systemFont(ofSize: 15)

@@ -52,7 +52,7 @@ After the synchronous verifier change, the participant confirmed the layout and 
 
 At the participant's request, the native flow now closes after successful verification or denial, without a third success/Close dialog. Receipt evidence remains in process output; removing those two informational dialogs does not change signing or verification. This final presentation-only deletion has automated/build coverage but has not had another hardware run. The future chat adapter should show Approved/Denied and authoritative execution status in the card; this lab has no such integration yet.
 
-The visible lab labels identify a fake local machine and receipt-only behavior. A production subtitle should identify the authenticated target and execution account, for example `home-server · Linux · Run as root`; presentation metadata such as “inline-only” need not be user-facing. Keep the lab's no-execution label until an actual production integration exists.
+The visible lab labels identify a fake local machine and receipt-only behavior. A production subtitle should show the authenticated target, specific OS/distribution version, and the bare sponsoring account, for example `home-server · Ubuntu 26.04.1 · brandon` or `home-server · macOS 27.2 · brandon`; presentation metadata such as “inline-only” need not be user-facing. Keep the lab's no-execution label until an actual production integration exists.
 
 ## The deployment boundary still to build
 
@@ -69,3 +69,5 @@ Passkeys remain optional. The session-only mode continues to attest an authentic
 Approval expiry is the deadline to authorize a request; it does not determine how long a launched command may run. The existing broker already accepts a signed per-request `timeout_secs`, with a hard-coded 1–300 second range and a 300-second default. This native fixture fixes that value to 30 seconds and never executes. The main review now omits it at the participant's request; Details retains it.
 
 For long-running work, evaluate a separately configured administrator maximum and a per-request duration bounded by it. Keep the chosen value in the frozen/signed request, require fresh approval to change it, and test runtime limits independently from approval expiry. No production timeout limit was changed in this work.
+
+The native and inline receipt fixtures now display `local-receipt-lab · <actual OS version> · test-user`; the account is explicitly a fixture identity. Production sponsor enrollment remains absent. OS/account fields are frozen into the respective native signed request or inline probe digest; this display work does not establish installation provenance.

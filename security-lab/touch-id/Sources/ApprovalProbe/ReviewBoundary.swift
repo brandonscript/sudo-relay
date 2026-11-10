@@ -14,6 +14,8 @@ public struct ReviewRequest: Codable, Equatable, Sendable {
     public let domain: String
     public let id: UUID
     public let nonce: UUID
+    public let operatingSystem: String
+    public let account: String
     public let machine: String
     public let enrollment: UUID
     public let createdAt: Int64
@@ -26,6 +28,9 @@ public struct ReviewRequest: Codable, Equatable, Sendable {
     public init(enrollment: UUID, now: Int64) {
         domain = "sudo-relay/native-review-lab/request/v1"
         id = UUID(); nonce = UUID(); machine = "local-receipt-lab"; self.enrollment = enrollment
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        operatingSystem = "macOS \(version.majorVersion).\(version.minorVersion)" + (version.patchVersion == 0 ? "" : ".\(version.patchVersion)")
+        account = "test-user"
         createdAt = now; expiresAt = now + 300
         argv = ["/usr/bin/printf", "Review boundary test only"]
         workingDirectory = "/"; timeoutSeconds = 30; authentication = "touch-id"
@@ -35,7 +40,9 @@ public struct ReviewRequest: Codable, Equatable, Sendable {
 
     fileprivate func validate(now: Int64) throws {
         guard domain == "sudo-relay/native-review-lab/request/v1", machine == "local-receipt-lab",
-              authentication == "touch-id", workingDirectory == "/", timeoutSeconds == 30,
+              operatingSystem.utf8.count <= 40,
+              operatingSystem.range(of: #"^macOS [0-9]+\.[0-9]+(?:\.[0-9]+)?$"#, options: .regularExpression) != nil,
+              account == "test-user", authentication == "touch-id", workingDirectory == "/", timeoutSeconds == 30,
               argv.count >= 1, argv.count <= 16, argv[0].hasPrefix("/"),
               argv.allSatisfy({ $0.utf8.count <= 1024 && $0.unicodeScalars.allSatisfy { (32...126).contains($0.value) } }),
               createdAt >= 0, expiresAt > createdAt, expiresAt - createdAt <= 300
@@ -78,6 +85,8 @@ public struct AuthenticatedReview: Sendable {
         return """
         RECEIPT ONLY — NO COMMAND RUNS
         Machine: \(request.machine)
+        OS: \(request.operatingSystem)
+        Account: \(request.account)
         Enrollment: \(request.enrollment)
         Request: \(request.id)
         Nonce: \(request.nonce)

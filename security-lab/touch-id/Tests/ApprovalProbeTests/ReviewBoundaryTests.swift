@@ -29,7 +29,7 @@ private func edit(_ bytes: Data, key: String, value: Any) throws -> Data {
     let authority = Curve25519.Signing.PrivateKey()
     let original = try ReviewRequest(enrollment: UUID(), now: 1000).bytes()
     let cases: [(String, Any)] = [
-        ("authentication", "session"), ("domain", "sudo-relay/request/v2"), ("machine", "production"),
+        ("account", "another-user"), ("operatingSystem", "macOS fake"), ("authentication", "session"), ("domain", "sudo-relay/request/v2"), ("machine", "production"),
         ("argv", ["relative", "test"]), ("argv", ["/usr/bin/printf", "safe\u{202E}unsafe"]),
         ("argv", ["/usr/bin/printf", "line\nbreak"]), ("argv", ["/usr/bin/printf", String(repeating: "a", count: 1025)]),
         ("workingDirectory", "/tmp"), ("timeoutSeconds", 301), ("expiresAt", 1301),
@@ -126,6 +126,7 @@ private func edit(_ bytes: Data, key: String, value: Any) throws -> Data {
     #expect(form.share.state == .off)
     #expect(!form.subviews.contains { ($0 as? NSTextField)?.isEditable == true })
     let labels = form.subviews.compactMap { ($0 as? NSTextField)?.stringValue }
+    #expect(labels.contains("\(review.request.machine) · \(review.request.operatingSystem) · test-user"))
     #expect(labels.contains("What you’re approving") && !labels.contains { $0.contains("Execution limit") })
     form.refresh(now: 1000)
     #expect(form.expiry.stringValue == "Approve within 5:00" && form.approve.isEnabled)

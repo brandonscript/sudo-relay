@@ -10,7 +10,7 @@ async function setup(page: Page, invalidMetadata = false, rejectDecision = false
     const iframe = document.querySelector('iframe');
     const callsNode = document.querySelector('#calls');
     if (!iframe || !callsNode) throw new Error('Missing fixture elements');
-    const request = { id: 'test-request', command: '/usr/bin/printf test', digest: 'd'.repeat(64), expires_at: Math.floor(Date.now() / 1000) + 300, state: 'pending', share_output: false };
+    const request = { id: 'test-request', machine: 'local-receipt-lab', operating_system: 'macOS 27.2', account: 'test-user', command: '/usr/bin/printf test', digest: 'd'.repeat(64), expires_at: Math.floor(Date.now() / 1000) + 300, state: 'pending', share_output: false };
     const calls: unknown[] = [];
     window.addEventListener('message', (event: MessageEvent<unknown>) => {
       if (event.source !== iframe.contentWindow || typeof event.data !== 'object' || event.data === null) return;
@@ -36,6 +36,7 @@ test('Host probe: Enter sends one decision and shows Approved', async ({ page })
   await setup(page);
   const card = page.frameLocator('iframe');
   await expect(card.getByRole('status')).toHaveText('Ready. This records a receipt only.');
+  await expect(card.locator('#machine')).toHaveText('local-receipt-lab · macOS 27.2 · test-user');
   expect(JSON.parse(await page.locator('#initialization').innerText())).toMatchObject({ appCapabilities: { availableDisplayModes: ['inline'] } });
   await card.getByLabel('Type 47 to confirm').fill('46');
   await expect(card.getByRole('button', { name: 'Approve once' })).toBeDisabled();

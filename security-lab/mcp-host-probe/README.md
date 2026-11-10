@@ -128,3 +128,7 @@ After refreshing the plugin, the user confirmed that the styled inline card look
 ### Softer card and input backgrounds (0.1.6)
 
 The user confirmed the 0.1.5 background in the live inline card and requested 10% instead. Both the outer card and number-entry area now use a 10% mid-gray tint. The input tint sits over the host background so it stays distinct from the confirmation row; text remains fully opaque. The resource is `inline-v4.html`. This is a visual change only.
+
+### Target subtitle (0.1.7)
+
+Both the inline and native review now show `machine · OS version · account`. The local fixture uses `local-receipt-lab` and `test-user`, with the actual local OS version (macOS product version or Linux distribution PRETTY_NAME). This is test identity, not sponsoring-account enrollment. It never calls a command to discover that information. The native request signs those fields; the inline capability probe freezes them into its request digest. Production must obtain the true sponsor from protected enrollment, never a caller's display label. The inline resource is `inline-v5.html`; refresh the plugin connection to see new cards.
