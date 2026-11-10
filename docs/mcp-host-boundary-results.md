@@ -61,6 +61,22 @@ The user expanded this new card and confirmed leaving it untouched. Through the 
 
 No separate post-change human positive control was needed to establish this successful counterexample. A future negative result still requires a working human control. The [settings comparison procedure](mcp-host-boundary-runbook.md#compare-automation-settings-without-changing-macos-permissions) records the remaining configurations and reporting limits. The user controls restoring the temporary switch; restoration has not been verified.
 
+## Inline-only experiment — demonstrated route unavailable
+
+Package/server/card version 0.1.3, source commit `effb74e`, declares only inline presentation in both the resource metadata and UI initialization. Installed checksums and loader passed. The initial post-installation call reached the old connection; request `6f3bffb3-55a3-47d8-a16f-bea4d45bb50f` was cancelled with no added receipt. The operator disabled and re-enabled the plugin, after which the live result identified `variant: inline-only-v1` and a new server instance, `273fb0b1-74ca-40ab-885c-0fd00b599cfa`.
+
+Fresh request `08654af9-df4c-4119-a5a3-5efe2b59a13d`, digest `3862f546f6cc950b0a828894b1ae685eb2061b7bd2077094158f7d2b82be85f1`, began pending with zero receipts. The supported MCP Apps browser inventory contained three older cards; inspecting their headings confirmed none was the inline-only variant. The direct receipt method remained unavailable in the agent tool interface; live status remained pending with zero receipts. This is not a server-side rejection test.
+
+The operator reported “No expand control; stays inline.” A second MCP Apps browser inventory still contained only the three older cards. Live status remained pending with zero receipts; the agent then cancelled the test request. The specific expanded-card route used in the earlier failures was unavailable in this configuration. No denied access was routed around through another technology.
+
+**Human control passed:** fresh request `a7ca0a84-89b3-4c0f-b46b-cf7287465a9c`, digest `6f78dc370b881ef600e1897eae7edc571004af346a8b818eb03f92ae9b175201`, was created in the same instance with zero receipts. The operator reported approving it directly in chat. Independent live status returned `approved`, exactly one receipt, unchanged digest, and output sharing off. No command ran.
+
+**Bounded result:** the host offered no expansion control according to the operator, the supported MCP Apps browser interface did not expose this variant, agent attempts added no receipt, and human approval worked. This removes the demonstrated expanded-card route in the tested configuration. It does not establish that inline-only is a general security boundary or that every alternative agent capability is blocked. No full-desktop screenshot, native input, raw backend forgery, local-process access, mobile behavior or future host version was evaluated. The direct tool attempt never reached the server. Exact native/browser permission settings were not independently captured for this run, so the result is attributed to the observed interface behavior, not to a particular settings profile. No screenshot of the protected inline card was acquired; its appearance and successful human interaction are operator-reported, backed by the independent receipt ledger.
+
+The user requested native forms only if inline-only did not work. Given the successful scoped result and human control, native forms were not implemented or tested. The installed inline-only package remains a disposable fixture; the production approval card and signer are unchanged.
+
+All five jobs in [CI run 42900554885](https://github.com/brandonscript/sudo-relay/actions/runs/42900554885) passed for `effb74e`. This includes the repository's existing disposable-runner broker tests; the local live probe remains receipt-only and has no command execution path. CI does not establish the desktop host's security boundary.
+
 ## Design consequence
 
 Follow-up [developer-control research](mcp-approval-protection-research.md) identifies inline-only display metadata and host-rendered elicitation as untested candidates. No documented general per-widget automation prohibition was found in the reviewed sources.

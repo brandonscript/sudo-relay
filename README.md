@@ -31,6 +31,8 @@ The [test catalogue](security-lab/test-cases.md) describes the cases, expected r
 
 **Confirmed limitation of the receipt-only chat probe:** in a [live Codex test](docs/mcp-host-boundary-results.md), the agent read private card data and approved a request through the expanded MCP Apps card without the person approving it. Approval also succeeded after the operator reported switching “Any App” off; the MCP Apps browser route remained available in that session. Nothing executed. Hiding data from model-facing tool results and requiring a number plus a button did not protect this card from agent computer use. Production signing integration remains unfinished; this finding does not demonstrate a bypass of native permission prompts, passkeys or Touch ID.
 
+A later [inline-only probe](docs/mcp-host-boundary-results.md#inline-only-experiment--demonstrated-route-unavailable) removed expansion and was absent from that browser interface, while human approval still worked. That is evidence against the specific route tested, not a general human-only approval guarantee. Production behavior is unchanged.
+
 ### What we have not established
 
 The following are possible compromise paths or missing evaluations. They are not a list of confirmed exploits, and they are not an exhaustive list of what could go wrong.
