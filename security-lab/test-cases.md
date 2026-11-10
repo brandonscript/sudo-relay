@@ -105,3 +105,19 @@ Run the Rust and TypeScript suites separately as described in CONTRIBUTING.md. T
 ## Remediation acceptance cases
 
 After fixes, rerun HTTP-02 expecting rejection without creating a signature or root command, KEY-02 expecting startup rejection in production, and MAC-ACL-01 expecting the deployment check to catch effective access. Keep the prior reproductions as regression tests. Re-run positive controls so denying all work cannot masquerade as a security fix.
+
+## Sponsor enrollment and live sudo policy (planned; not implemented)
+
+Run these cases only in disposable machines with fake accounts and credentials. Existing passing tests do not cover them.
+
+- Enroll through the supported sudo installer as account A. Verify the recorded sponsor is A; no MCP field, CLI sponsor selector or unprivileged file edit can select B. Reject direct-root or ambiguous enrollment provenance rather than guessing.
+- Enroll A and B on the same machine. Give each separate agent/approver identities, sockets, keys, state and enrollment identity. Verify A cannot submit, inspect, cancel, approve or replay B's requests, and vice versa. Shared agent UIDs are not isolation.
+- Remove A's permission before requesting a command: reject the request. Confirm B's permitted enrollment still works.
+- Create a pending request for A, remove permission, then submit an otherwise valid approval: no command side effect. Repeat after consumption but before launch using a deterministic test barrier.
+- Allow A one specific executable/argument combination and deny another. Check the exact command, target root identity and relevant policy constraints rather than group membership or the existence of any sudo grant.
+- Delete or replace A, change its UID, or reuse its old UID. Fail closed on identity mismatch; require fresh authenticated enrollment. Verify renaming/account recovery semantics explicitly on each supported OS.
+- Make policy evaluation unavailable, time out, or return malformed results. No launch; preserve an auditable failure and never retry consumed approvals automatically.
+- Attempt to switch sponsor in protected metadata. Unprivileged modification must fail; mismatch with existing state/approval identity must fail closed. Root compromise remains outside the boundary.
+- For launch through native sudo: revoke permission at the launch barrier and verify sudo denies execution. Verify authentication occurs only through the trusted human host and secrets never enter MCP messages, output capture, logs or the agent's process environment.
+- If a check-then-launch implementation is selected instead: demonstrate and document its residual race; never describe it as atomic revocation enforcement.
+- Measure request and launch policy-check latency with allowed and denied commands, without caching authorization across requests. Record OS, sudo version, policy backend and percentile timings.

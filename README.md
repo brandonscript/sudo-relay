@@ -31,6 +31,7 @@ The following are possible compromise paths or missing evaluations. They are not
 
 | Area | What remains unknown |
 |---|---|
+| Sponsor revocation | The broker currently has no sponsoring-sudoer enrollment or live sudo-policy check. Removing an installing user’s sudo rights does not revoke broker access. Per-sudoer binding and revocation enforcement are pending; do not use the alpha where this is an authorization requirement. |
 | Trusted display and human approval | No production chat-host/signing integration has been verified. An agent-controlled or compromised approval view could show something different from what the signer authorizes. A signature alone does not prove what appeared on screen or that a person approved it. The reference host is preview-only and cannot sign. |
 | Key and process isolation | File-open tests do not cover key extraction from process memory, debugging interfaces, swap, core dumps, backups or logs. Separate user IDs are necessary for this design but are not a complete evaluation of effective access. |
 | Real Linux/macOS installations | systemd/launchd service lifecycle, administrator setup and macOS root deployment have not been validated on disposable machines. Owner/mode checks do not inspect macOS ACL entries; additional access granted by ACLs needs evaluation. |
