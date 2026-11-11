@@ -79,7 +79,11 @@ func reviewDurableNative(_ proxy: any PeerReceiptProtocol, root: URL, keyData: D
             if (try? await nativeBrokerCall(proxy, ["method": "cancel_execution", "id": review.requestID])) == nil {
                 report("native-durable-cancellation-unconfirmed")
             }
-        } else { report("native-durable-submission-outcome-unconfirmed") }
+        } else {
+            report("native-durable-submission-outcome-unconfirmed")
+            if case ReviewError.expired = error { throw error }
+            throw ReviewError.submissionUnconfirmed
+        }
         throw error
     }
 }

@@ -517,3 +517,24 @@ The fault is injected at the transport boundary; this is not an actual socket
 disconnect or proof against a compromised operating system. This local test and
 strict lint pass. The preceding native submission root jobs passed in run
 42946565284; its broader macOS check was still running at this checkpoint.
+
+### Actual socket close after receipt consumption
+
+The native submission failure test now includes an ordinary-user Unix listener.
+It receives the serialized `approve_receipt` request through the real transport,
+verifies and consumes it using the real broker, then closes the socket without
+writing a reply. The caller fails without retrying; SQLite has one consumption
+and no execution job was returned. Explicit replay stops at status retrieval.
+This checks a real socket close, but the fixture does not exercise root peer
+authentication (covered separately by disposable root CI).
+
+Native submission now reports a distinct `submissionUnconfirmed` error. Its
+notice says the receipt may have been recorded and no retry occurred. Ordinary
+cancellation and expiry still suppress notices. Fifteen Swift tests, native
+protocol checks, the socket-failure case and strict lint pass locally. The visible
+notice has not been manually inspected. XPC's immediate-disconnect process-exit
+path still needs separate user-facing outcome handling.
+
+Full native submission CI run 42946565284 passed.
+The updated native client also compiles and passes all nineteen XPC regression
+cases without opening a dialog or requesting authentication.

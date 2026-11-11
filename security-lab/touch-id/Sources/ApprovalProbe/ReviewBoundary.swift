@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-public enum ReviewError: Error { case invalidRequest, invalidAuthority, expired, invalidProof, alreadyDecided }
+public enum ReviewError: Error { case invalidRequest, invalidAuthority, expired, invalidProof, alreadyDecided, submissionUnconfirmed }
 
 private func encoded<T: Encodable>(_ value: T) throws -> Data {
     let encoder = JSONEncoder()

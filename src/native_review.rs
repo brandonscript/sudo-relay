@@ -474,6 +474,7 @@ mod tests {
         for fault in [
             "before-consumption",
             "after-consumption",
+            "socket-closed-after-consumption",
             "wrong-id",
             "wrong-mode",
             "success",
@@ -529,6 +530,38 @@ mod tests {
                 calls.push(approving);
                 if approving && fault == "before-consumption" {
                     anyhow::bail!("connection lost before delivery");
+                }
+                if approving && fault == "socket-closed-after-consumption" {
+                    use std::{
+                        io::{BufRead, BufReader},
+                        os::unix::net::UnixListener,
+                        time::Duration,
+                    };
+                    fs::create_dir(enrollment.socket.parent().unwrap())?;
+                    let listener = UnixListener::bind(&enrollment.socket)?;
+                    return std::thread::scope(|scope| {
+                        let server = scope.spawn(|| -> Result<()> {
+                            let (stream, _) = listener.accept()?;
+                            stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+                            let mut reader = BufReader::new(stream);
+                            let mut bytes = String::new();
+                            reader.read_line(&mut bytes)?;
+                            let received: Request = serde_json::from_str(&bytes)?;
+                            ensure!(
+                                matches!(received, Request::ApproveReceipt { .. }),
+                                "expected receipt method"
+                            );
+                            let (reply, job) = broker.handle_receipt_current(received, uid)?;
+                            assert!(job.is_none());
+                            assert_eq!(reply.value()?["state"], "consumed");
+                            // Close the actual socket after commit, without writing an acknowledgement.
+                            drop(reader);
+                            Ok(())
+                        });
+                        let response = crate::transport::call(&enrollment.socket, &request);
+                        server.join().expect("receipt fixture thread panicked")?;
+                        response
+                    });
                 }
                 let (reply, job) = if approving {
                     broker.handle_receipt_current(request, uid)?

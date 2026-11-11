@@ -40,12 +40,12 @@ struct ProtectedReviewCheck {
         do {
             try review.submitReceipt(signature: signature, shareOutput: true)
             throw ReviewError.invalidRequest
-        } catch ReviewError.invalidProof { }
+        } catch ReviewError.submissionUnconfirmed { }
         try review.submitReceipt(signature: signature, shareOutput: false)
         do {
             try review.submitReceipt(signature: signature, shareOutput: false)
             throw ReviewError.invalidRequest
-        } catch ReviewError.invalidProof { }
+        } catch ReviewError.submissionUnconfirmed { }
         let result = Result(id: review.requestID, number: review.confirmationNumber,
             subtitle: review.subtitle, command: review.commandText(), shared: hex(shared), withheld: hex(withheld), signature: hex(signature), consumed: true)
         FileHandle.standardOutput.write(try JSONEncoder().encode(result))

@@ -12,6 +12,14 @@ public func requiresErrorNotice(_ error: Error) -> Bool {
     return !isAuthenticationCancellation(error)
 }
 
+public func reviewFailureNotice(_ error: Error) -> (title: String, message: String) {
+    if case ReviewError.submissionUnconfirmed = error {
+        return ("Receipt confirmation lost",
+            "The receipt may have been recorded, but confirmation was lost. Nothing executes in this lab. No retry was attempted.")
+    }
+    return ("Test approval failed", "Nothing executes in this lab.\n\(errorSummary(error))")
+}
+
 // Authentication errors can include biometric configuration metadata in userInfo.
 public func errorSummary(_ error: Error) -> String {
     let error = error as NSError

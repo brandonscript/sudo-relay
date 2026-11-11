@@ -58,3 +58,13 @@ import Testing
     #expect(try challenge.verify(signature, key: key.publicKey, now: Date(timeIntervalSince1970: 1299)))
     #expect(try !challenge.verify(signature, key: key.publicKey, now: Date(timeIntervalSince1970: 1300)))
 }
+
+@Test func unconfirmedSubmissionDoesNotClaimRejectionOrSuggestRetry() {
+    let notice = reviewFailureNotice(ReviewError.submissionUnconfirmed)
+    #expect(notice.title == "Receipt confirmation lost")
+    #expect(notice.message.contains("may have been recorded"))
+    #expect(notice.message.contains("No retry was attempted"))
+    #expect(requiresErrorNotice(ReviewError.submissionUnconfirmed))
+    #expect(!requiresErrorNotice(ReviewError.expired))
+    #expect(!requiresErrorNotice(NSError(domain: LAError.errorDomain, code: LAError.Code.userCancel.rawValue)))
+}

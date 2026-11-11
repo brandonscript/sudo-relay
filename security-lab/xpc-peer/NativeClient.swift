@@ -21,8 +21,9 @@ struct NativeClient {
                 report("native-review-stopped", error: error)
                 if requiresErrorNotice(error) {
                     let alert = NSAlert()
-                    alert.messageText = "Test approval failed"
-                    alert.informativeText = "Nothing executes in this lab.\n\(errorSummary(error))"
+                    let notice = reviewFailureNotice(error)
+                    alert.messageText = notice.title
+                    alert.informativeText = notice.message
                     alert.addButton(withTitle: "Close")
                     alert.runModal()
                 }

@@ -125,7 +125,7 @@ struct BrokerReview: NativeReviewContent {
         let result = bytes.withUnsafeBytes { input in
             sudo_relay_submit_receipt(input.bindMemory(to: UInt8.self).baseAddress, bytes.count)
         }
-        guard result == 1 else { throw ReviewError.invalidProof }
+        guard result == 1 else { throw ReviewError.submissionUnconfirmed }
     }
 
     func decision(shareOutput: Bool, now: Int64) throws -> Data {
