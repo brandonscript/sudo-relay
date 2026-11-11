@@ -199,3 +199,23 @@ are added to disposable root CI; local error-path checks verify untouched buffer
 This policy contains peer code requirements only. It does not protect the lab's
 self-enrolled approving key or broker state, bind sponsor provenance, or constitute
 a supported production installation. Those remain required work.
+
+### Observed policy revocation
+
+The XPC service re-reads peer policy before accepting connections and before
+issuing reviews, disclosing status or accepting receipts. Any missing, malformed
+or changed client/service/verifier requirement permanently invalidates that
+service instance. It denies its in-memory request and stops its durable child;
+restoring the old policy does not reactivate it. Cancellation remains available.
+
+Nineteen receipt-only XPC cases pass locally, including five policy mutations on
+an existing authenticated connection and one durable-ledger revocation case.
+The durable request stays pending with zero consumption records and no canary.
+The new C ABI positive/buffer cases also passed both disposable root CI jobs in
+run 42939101885. Full macOS CI was still running when this evidence was recorded.
+
+This is observation-based revocation, not an atomic revocation transaction. A
+change and restoration between checks is not detected, and policy can change
+after a check but before consumption. Persisted policy epochs, rollback across
+service restart and coordination with the verifier remain open. These checks
+also do not establish sponsor privilege revocation or protect fixture key storage.

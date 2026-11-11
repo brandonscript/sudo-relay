@@ -7,6 +7,7 @@ from pathlib import Path
 import plistlib
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -95,7 +96,7 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
     original_verifier = cdhash(helper / "Contents/Helpers/receipt-verifier")
     results: list[dict[str, object]] = []
     for case in ["allowed", "variant-client-allowed", "substituted-client", "variant-service-allowed",
-                 "substituted-service", "substituted-service-without-handshake", "signed-review", "signed-denied", "signed-reconnect", "durable-review", "durable-child-allowed", "durable-child-rejected", "durable-child-missing-pin"]:
+                 "substituted-service", "substituted-service-without-handshake", "signed-review", "signed-denied", "signed-reconnect", "durable-review", "durable-child-allowed", "durable-child-rejected", "durable-child-missing-pin", "signed-policy-client", "signed-policy-service", "signed-policy-verifier", "signed-policy-missing", "signed-policy-malformed", "durable-policy-revoked"]:
         case_root = root / case
         app = case_root / "PeerLab.app"
         shutil.copytree(original, app)
@@ -130,9 +131,9 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
             (case_root / "policy.json").write_text(json.dumps(policy))
         characterization = case.endswith("without-handshake")
         arguments = ["--characterize-without-handshake"] if characterization else []
-        if case in ["signed-review", "signed-denied", "signed-reconnect", "durable-review", "durable-child-allowed", "durable-child-rejected", "durable-child-missing-pin"]:
+        if case in ["signed-review", "signed-denied", "signed-reconnect", "durable-review", "durable-child-allowed", "durable-child-rejected", "durable-child-missing-pin", "signed-policy-client", "signed-policy-service", "signed-policy-verifier", "signed-policy-missing", "signed-policy-malformed", "durable-policy-revoked"]:
             run(str(app / "Contents/MacOS/Client"), "--fixture-key")
-            arguments = ["--durable-review" if case.startswith("durable-") else f"--{case}"]
+            arguments = ["--durable-review" if case.startswith("durable-") and case != "durable-policy-revoked" else f"--{case}"]
         if case.startswith("durable-"):
             state = case_root / "state"
             state.mkdir(mode=0o700)
@@ -152,6 +153,17 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
             assert result.returncode == 1 and len(events) == 1 and events[0]["event"] == "peer-rejected", (case, result)
             assert not (case_root / "state/state.sqlite3").exists(), "rejected child must not start"
             assert not (case_root / "must-not-exist").exists()
+        elif case == "durable-policy-revoked":
+            assert result.returncode == 0 and events == [{"event": "peer-verified"},
+                {"event": "durable-policy-revoked-zero-receipts-no-recovery"}], (case, result)
+            with sqlite3.connect(f"file:{case_root / 'state/state.sqlite3'}?mode=ro", uri=True) as db:
+                assert db.execute("SELECT state FROM requests").fetchall() == [("pending",)]
+                assert db.execute("SELECT count(*) FROM audit WHERE event='consumed'").fetchone() == (0,)
+            assert not receipt.exists() and not (case_root / "must-not-exist").exists()
+        elif case.startswith("signed-policy-"):
+            assert result.returncode == 0 and events == [{"event": "peer-verified"},
+                {"event": "policy-revoked-zero-receipts-no-recovery"}], (case, result)
+            assert not receipt.exists()
         elif case in ["signed-review", "signed-denied", "signed-reconnect", "durable-review", "durable-child-allowed"]:
             expected = {"signed-review": "signed-review-one-receipt-alteration-and-replay-rejected",
                         "signed-denied": "signed-review-denied-zero-receipts",

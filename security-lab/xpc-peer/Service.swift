@@ -6,6 +6,7 @@ final class ReceiptService: NSObject, NSXPCListenerDelegate, PeerReceiptProtocol
     private let root: URL
     private let verifier: ReviewReceiptVerifier?
     private var durable: ReceiptProcess?
+    private var policyInvalidated = false
     // XPC may deliver different clients concurrently; serialize the test receipt file.
     private let lock = NSLock()
 
@@ -23,9 +24,21 @@ final class ReceiptService: NSObject, NSXPCListenerDelegate, PeerReceiptProtocol
         } else { verifier = nil }
     }
 
+    // Called under lock. A changed policy requires a fresh service, never automatic recovery.
+    private func policyIsCurrent() -> Bool {
+        guard !policyInvalidated else { return false }
+        guard let current = try? PeerPolicy.load(from: root), current == policy else {
+            policyInvalidated = true
+            verifier?.deny()
+            durable?.stop(); durable = nil
+            return false
+        }
+        return true
+    }
+
     func broker(_ request: Data, reply: @escaping @Sendable (Data?) -> Void) {
         lock.lock(); defer { lock.unlock() }
-        guard request.count < 65536, let durable else { reply(nil); return }
+        guard policyIsCurrent(), request.count < 65536, let durable else { reply(nil); return }
         do { reply(try durable.exchange(request)) }
         catch {
             // Unknown outcome stays unknown. No automatic child restart or approval resubmission.
@@ -34,22 +47,26 @@ final class ReceiptService: NSObject, NSXPCListenerDelegate, PeerReceiptProtocol
     }
 
     func status(_ id: String, reply: @escaping @Sendable (String) -> Void) {
-        guard id.utf8.count <= 36, let id = UUID(uuidString: id), let verifier else { reply("unknown"); return }
+        lock.lock(); defer { lock.unlock() }
+        guard policyIsCurrent(), id.utf8.count <= 36, let id = UUID(uuidString: id), let verifier else { reply("unknown"); return }
         reply(verifier.status(id: id, now: Int64(Date().timeIntervalSince1970)).rawValue)
     }
 
     func cancel(reply: @escaping @Sendable () -> Void) {
+        lock.lock(); defer { lock.unlock() }
         verifier?.deny()
         reply()
     }
 
     func review(reply: @escaping @Sendable (Data?, Data?, Data?) -> Void) {
-        guard let packet = try? verifier?.issue() else { reply(nil, nil, nil); return }
+        lock.lock(); defer { lock.unlock() }
+        guard policyIsCurrent(), let packet = try? verifier?.issue() else { reply(nil, nil, nil); return }
         reply(packet.bytes, packet.signature, packet.authority.rawRepresentation)
     }
 
     func submit(_ decision: Data, signature: Data, reply: @escaping @Sendable (Bool) -> Void) {
-        guard decision.count <= 16384, signature.count <= 80, let verifier else { reply(false); return }
+        lock.lock(); defer { lock.unlock() }
+        guard policyIsCurrent(), decision.count <= 16384, signature.count <= 80, let verifier else { reply(false); return }
         do {
             _ = try verifier.consume(decision: decision, signature: signature, now: Int64(Date().timeIntervalSince1970))
             reply(true)
@@ -57,6 +74,8 @@ final class ReceiptService: NSObject, NSXPCListenerDelegate, PeerReceiptProtocol
     }
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard policyIsCurrent() else { return false }
         connection.setCodeSigningRequirement(policy.client)
         connection.exportedInterface = NSXPCInterface(with: PeerReceiptProtocol.self)
         connection.exportedObject = self
@@ -66,11 +85,13 @@ final class ReceiptService: NSObject, NSXPCListenerDelegate, PeerReceiptProtocol
     }
 
     func hello(reply: @escaping @Sendable (String) -> Void) {
-        reply("peer-check-hello")
+        lock.lock(); defer { lock.unlock() }
+        reply(policyIsCurrent() ? "peer-check-hello" : "policy-unavailable")
     }
 
     func receipt(reply: @escaping @Sendable (String) -> Void) {
         lock.lock(); defer { lock.unlock() }
+        guard policyIsCurrent() else { reply("receipt-failed"); return }
         do {
             let destination = root.appendingPathComponent("receipt.txt")
             // The harness gives each connection attempt a fresh directory.

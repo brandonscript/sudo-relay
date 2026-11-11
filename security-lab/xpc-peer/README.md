@@ -253,3 +253,9 @@ root-protected regular file of at most 4096 bytes; failure never falls back to t
 fixture file. Client and service use the same reader. This protects loading of
 peer code requirements when deployed with protected bundles; it does not turn the
 same-user test key enrollment or receipt ledger into protected production state.
+
+The service rechecks policy on each request and new connection. Once it observes
+a changed, missing or invalid policy it stops accepting receipts for the rest of
+that process lifetime, including after the old file is restored. The 19-case
+harness covers existing connections and the durable ledger. This does not make
+policy updates atomic with receipt consumption or prevent rollback on restart.

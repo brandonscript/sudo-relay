@@ -14,7 +14,7 @@ protocol PeerReceiptProtocol: Sendable {
     func broker(_ request: Data, reply: @escaping @Sendable (Data?) -> Void)
 }
 
-struct PeerPolicy: Decodable {
+struct PeerPolicy: Decodable, Equatable {
     let client: String
     let service: String
     let verifier: String?

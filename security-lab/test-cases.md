@@ -280,3 +280,22 @@ Swift negative/fixture controls, Rust invalid-path tests and all thirteen XPC ca
 pass locally. The earlier protected-reader root cases passed Linux/macOS CI run
 42938600587; the newly added C ABI positive controls await their own CI run.
 No protected native enrollment or hardware approval is established by these tests.
+
+### Peer-policy revocation on an existing connection
+
+After the identity handshake, obtain a request and create its valid disposable
+software signature. Before submission, independently replace each peer requirement
+(client, service, verifier), remove policy, or replace it with invalid JSON. Each
+submission must reject. Restore the original file and retry: still reject; neither
+a new review nor a direct test receipt may be issued by that service instance.
+
+For the durable path, create a broker request and valid CBOR proof, remove policy,
+and submit through the existing XPC channel. Restore and resubmit. Both return no
+receipt; a read-only SQLite check finds one pending request and zero consumption
+audit entries, and the canary remains absent. This also exercises stopping the
+verifier child on observed invalidation.
+
+All six new cases and the thirteen existing cases pass locally. The policy files
+are deliberately user-owned fixtures; protected-file enforcement is tested
+separately. Between-check changes, revocation/consumption races, service restart
+and policy rollback are not covered by these results.

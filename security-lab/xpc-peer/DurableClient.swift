@@ -14,7 +14,7 @@ private func brokerCall(_ proxy: any PeerReceiptProtocol, _ request: [String: An
 }
 
 @MainActor
-func checkDurableXPC(_ proxy: any PeerReceiptProtocol, root: URL) async {
+func checkDurableXPC(_ proxy: any PeerReceiptProtocol, root: URL, revoke: Bool = false) async {
     do {
         // Fixture enrollment is controller-owned, not supplied by the peer's response.
         let config = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("broker-config.json"))) as! [String: Any]
@@ -35,6 +35,21 @@ func checkDurableXPC(_ proxy: any PeerReceiptProtocol, root: URL) async {
         let proof = try key.signature(for: review.decision(shareOutput: false, now: now())).derRepresentation
         let approval: [String: Any] = ["method": "approve", "id": id, "key_id": "native", "number": number,
             "share_output": false, "signature": proof.map { String(format: "%02x", $0) }.joined()]
+        if revoke {
+            let path = root.appendingPathComponent("policy.json")
+            let original = try Data(contentsOf: path)
+            try FileManager.default.removeItem(at: path)
+            let bytes = try JSONSerialization.data(withJSONObject: approval)
+            for attempt in 0..<2 {
+                if attempt == 1 { try original.write(to: path, options: .atomic) }
+                let result: Data? = await withCheckedContinuation { continuation in
+                    proxy.broker(bytes) { continuation.resume(returning: $0) }
+                }
+                guard result == nil else { throw ReviewError.invalidProof }
+            }
+            guard !FileManager.default.fileExists(atPath: canary.path) else { throw ReviewError.invalidProof }
+            report("durable-policy-revoked-zero-receipts-no-recovery"); exit(0)
+        }
         var changed = approval; changed["share_output"] = true
         let altered = try await brokerCall(proxy, changed)
         guard altered["approval_consumed"] as? Bool == false else { throw ReviewError.invalidProof }
