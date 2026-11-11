@@ -13,6 +13,7 @@ swiftc -swift-version 6 -warnings-as-errors -module-cache-path "$check_dir/modul
   -I security-lab/native-protocol \
   security-lab/native-protocol/ProtectedReviewCheck.swift \
   security-lab/native-protocol/BrokerReview.swift \
+  security-lab/native-protocol/ProtectedReceiptDecision.swift \
   security-lab/touch-id/Sources/ApprovalProbe/ReviewBoundary.swift \
   -L target/debug -lsudo_relay -framework Security \
   -framework SystemConfiguration -liconv -o "$output"

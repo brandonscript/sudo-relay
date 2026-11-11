@@ -21,3 +21,7 @@ intptr_t sudo_relay_prepare_review(const uint8_t *input, size_t input_len,
 // JSON {enrollment,id,signature,share_output}, <=4096 bytes. Receipt-only submission.
 // Returns 1 only for verified consumption, -1 otherwise (outcome may be unknown). Never retry automatically.
 int32_t sudo_relay_submit_receipt(const uint8_t *input, size_t input_len);
+
+// JSON {enrollment,id}, <=4096 bytes. Cancel a protected pending receipt only.
+// Returns 1 for matching cancellation acknowledgement, -1 otherwise. No retries.
+int32_t sudo_relay_cancel_receipt(const uint8_t *input, size_t input_len);

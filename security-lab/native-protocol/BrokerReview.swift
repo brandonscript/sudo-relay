@@ -107,6 +107,13 @@ struct BrokerReview: NativeReviewContent {
         subtitle = "\(machineName) · \(operatingSystem) · \(account)"
     }
 
+    var signingKeyAccount: String {
+        get throws {
+            guard let enrolledSigningKey else { throw ReviewError.invalidAuthority }
+            return SHA256.hash(data: enrolledSigningKey).map { String(format: "%02x", $0) }.joined()
+        }
+    }
+
     /// Check the loaded key before asking for a fingerprint; the broker still verifies every signature.
     func verifySigningKey(_ publicKey: P256.Signing.PublicKey) throws {
         guard let enrolledSigningKey, enrolledSigningKey == publicKey.x963Representation else {
@@ -126,6 +133,16 @@ struct BrokerReview: NativeReviewContent {
             sudo_relay_submit_receipt(input.bindMemory(to: UInt8.self).baseAddress, bytes.count)
         }
         guard result == 1 else { throw ReviewError.submissionUnconfirmed }
+    }
+
+    func cancelReceipt() throws {
+        guard let protectedEnrollment else { throw ReviewError.invalidAuthority }
+        struct Reference: Encodable { let enrollment: String; let id: String }
+        let bytes = try JSONEncoder().encode(Reference(enrollment: protectedEnrollment.path, id: requestID))
+        let result = bytes.withUnsafeBytes { input in
+            sudo_relay_cancel_receipt(input.bindMemory(to: UInt8.self).baseAddress, bytes.count)
+        }
+        guard result == 1 else { throw ReviewError.invalidRequest }
     }
 
     func decision(shareOutput: Bool, now: Int64) throws -> Data {

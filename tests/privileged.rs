@@ -657,6 +657,19 @@ fn protected_receipt_socket_roundtrip(config: &Config) {
     let id: String = serde_json::from_slice(&fs::read(&pending).unwrap()).unwrap();
     probe(config, config.agent_uid, "native_agent_approve", Some(&id));
     probe(config, config.approver_uid, "native_receipt", Some(&id));
+    probe(
+        config,
+        config.agent_uid,
+        "native_request",
+        Some(pending.to_str().unwrap()),
+    );
+    let cancelled_id: String = serde_json::from_slice(&fs::read(&pending).unwrap()).unwrap();
+    probe(
+        config,
+        config.approver_uid,
+        "native_cancel",
+        Some(&cancelled_id),
+    );
     probe(config, 10003, "foreign", None);
     assert!(transport::call_protected(&config.socket, &Request::ExecutionStatus { id }).is_err());
     assert!(!run.join("must-not-exist").exists());
@@ -701,6 +714,7 @@ fn native_receipt_peer(config: &Config) {
     // Retrieve the frozen request directly from the root peer, never from agent-supplied display data.
     unsafe extern "C" {
         fn sudo_relay_submit_receipt(input: *const u8, input_len: usize) -> i32;
+        fn sudo_relay_cancel_receipt(input: *const u8, input_len: usize) -> i32;
         fn sudo_relay_fetch_review(
             input: *const u8,
             input_len: usize,
@@ -754,6 +768,27 @@ fn native_receipt_peer(config: &Config) {
             }
         )
         .is_err());
+        return;
+    }
+    if operation == "native_cancel" {
+        let input = serde_json::to_vec(&serde_json::json!({
+            "enrollment": run.join("enrollment.json"), "id": argument,
+        }))
+        .unwrap();
+        assert_eq!(
+            unsafe { sudo_relay_cancel_receipt(input.as_ptr(), input.len()) },
+            1
+        );
+        assert_eq!(
+            unsafe { sudo_relay_cancel_receipt(input.as_ptr(), input.len()) },
+            -1
+        );
+        let status =
+            transport::call_protected(&config.socket, &Request::ExecutionStatus { id: argument })
+                .unwrap();
+        assert_eq!(status["state"], "cancelled");
+        assert!(status["outcome"].is_null());
+        assert!(!run.join("must-not-exist").exists());
         return;
     }
     for (id, enrollment, capacity, expected) in [

@@ -3,6 +3,7 @@ import Foundation
 
 /// Disposable CI signer: software key only, no UI, biometrics or command execution.
 @main
+@MainActor
 struct ProtectedReviewCheck {
     private struct Result: Encodable {
         let id: String
@@ -27,7 +28,8 @@ struct ProtectedReviewCheck {
         guard getuid() != 0, ProcessInfo.processInfo.environment["PE_NATIVE_RECEIPT_CHECK"] == "1",
               CommandLine.arguments.count == 3 else { throw ReviewError.invalidRequest }
         let enrollment = URL(fileURLWithPath: CommandLine.arguments[1])
-        let review = try BrokerReview(protectedEnrollment: enrollment, requestID: CommandLine.arguments[2])
+        let decision = try ProtectedReceiptDecision(enrollment: enrollment, requestID: CommandLine.arguments[2])
+        let review = decision.review
         guard review.subtitle == "protected-receipt-fixture · Disposable OS fixture · test-user",
               review.commandLabel == "Example command · Not executed" else { throw ReviewError.invalidRequest }
         let now = Int64(Date().timeIntervalSince1970)
@@ -36,12 +38,49 @@ struct ProtectedReviewCheck {
         let keyBytes = try Data(contentsOf: enrollment.deletingLastPathComponent().appendingPathComponent("host/host.key"))
         let key = try P256.Signing.PrivateKey(rawRepresentation: keyBytes)
         try review.verifySigningKey(key.publicKey)
+        let wrongSigner = try ProtectedReceiptDecision(enrollment: enrollment, requestID: review.requestID)
+        do {
+            try wrongSigner.approve(publicKey: P256.Signing.PrivateKey().publicKey, shareOutput: false) { _ in
+                preconditionFailure("Wrong key reached signing")
+            }
+            throw ReviewError.invalidRequest
+        } catch ReviewError.invalidAuthority { }
+        let expiredDuringSigning = try ProtectedReceiptDecision(enrollment: enrollment, requestID: review.requestID)
+        var checks = 0
+        var signatures = 0
+        do {
+            try expiredDuringSigning.approve(publicKey: key.publicKey, shareOutput: false, now: {
+                checks += 1
+                return checks == 1 ? now : review.expiresAt
+            }) { bytes in
+                signatures += 1
+                return try key.signature(for: bytes).derRepresentation
+            }
+            throw ReviewError.invalidRequest
+        } catch ReviewError.expired { }
+        guard checks == 2, signatures == 1 else { throw ReviewError.invalidRequest }
+        do {
+            try expiredDuringSigning.approve(publicKey: key.publicKey, shareOutput: false) { _ in
+                preconditionFailure("Expired attempt retried signing")
+            }
+            throw ReviewError.invalidRequest
+        } catch ReviewError.alreadyDecided { }
+        // The pending request must survive the rejected local attempts for this positive control.
         let signature = try key.signature(for: withheld).derRepresentation
         do {
             try review.submitReceipt(signature: signature, shareOutput: true)
             throw ReviewError.invalidRequest
         } catch ReviewError.submissionUnconfirmed { }
-        try review.submitReceipt(signature: signature, shareOutput: false)
+        try decision.approve(publicKey: key.publicKey, shareOutput: false) { bytes in
+            guard bytes == withheld else { throw ReviewError.invalidRequest }
+            return try key.signature(for: bytes).derRepresentation
+        }
+        do {
+            try decision.approve(publicKey: key.publicKey, shareOutput: false) { _ in
+                preconditionFailure("Repeated decision reached signer")
+            }
+            throw ReviewError.invalidRequest
+        } catch ReviewError.alreadyDecided { }
         do {
             try review.submitReceipt(signature: signature, shareOutput: false)
             throw ReviewError.invalidRequest

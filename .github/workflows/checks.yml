@@ -49,6 +49,9 @@ jobs:
         if: runner.os == 'macOS'
         timeout-minutes: 3
         run: sh security-lab/native-protocol/check.sh
+      - name: Build protected interactive receipt reviewer without launching it
+        if: runner.os == 'macOS'
+        run: sh security-lab/native-protocol/build-protected-app.sh "$RUNNER_TEMP/protected-native-app"
       - name: Check isolated Touch ID experiment without hardware authentication
         if: runner.os == 'macOS'
         run: swift test -Xswiftc -warnings-as-errors

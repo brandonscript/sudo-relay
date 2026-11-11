@@ -112,6 +112,48 @@ fn prepare_fetched_review(
     )?)
 }
 
+fn cancel_receipt(input: &[u8]) -> Result<()> {
+    let reference: ReviewReference = serde_json::from_slice(input)?;
+    let enrollment = load_enrollment(&reference)?;
+    let status = crate::transport::call_protected(
+        &enrollment.socket,
+        &crate::protocol::Request::ExecutionStatus {
+            id: reference.id.clone(),
+        },
+    )?;
+    prepare_fetched_review(&enrollment, &reference.id, &status, crate::broker::now())?;
+    let result = crate::transport::call_protected(
+        &enrollment.socket,
+        &crate::protocol::Request::CancelExecution {
+            id: reference.id.clone(),
+        },
+    )?;
+    ensure!(
+        result["receipt_only"] == true
+            && result["id"] == reference.id
+            && result["state"] == "cancelled",
+        "cancellation not confirmed"
+    );
+    Ok(())
+}
+
+/// Cancel only a protected, pending receipt request. Never signs or retries.
+///
+/// # Safety
+/// Input must reference input_len readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn sudo_relay_cancel_receipt(input: *const u8, input_len: usize) -> i32 {
+    if input.is_null() || input_len == 0 || input_len > 4096 {
+        return -1;
+    }
+    match std::panic::catch_unwind(|| {
+        cancel_receipt(unsafe { std::slice::from_raw_parts(input, input_len) })
+    }) {
+        Ok(Ok(())) => 1,
+        _ => -1,
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ReceiptSubmission {
@@ -652,6 +694,10 @@ mod tests {
             br#"{"enrollment":"/missing.json","id":""}"#,
             br#"{"enrollment":"/missing.json","id":"request","command":"injected"}"#,
         ] {
+            assert_eq!(
+                unsafe { sudo_relay_cancel_receipt(input.as_ptr(), input.len()) },
+                -1
+            );
             let mut output = [0xaa; 32];
             assert_eq!(
                 unsafe {
