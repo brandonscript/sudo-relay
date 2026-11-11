@@ -5,5 +5,7 @@ ui/dist/
 *.key
 *.pem
 .DS_Store
+__pycache__/
+*.pyc
 /security-lab/evidence/
 /backlog.md
