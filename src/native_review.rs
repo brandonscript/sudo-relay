@@ -4,6 +4,79 @@ use anyhow::{ensure, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReviewReference {
+    socket: std::path::PathBuf,
+    id: String,
+    machine_id: String,
+}
+
+fn fetch_review(input: &[u8]) -> Result<Vec<u8>> {
+    let reference: ReviewReference = serde_json::from_slice(input)?;
+    ensure!(
+        reference.socket.is_absolute()
+            && !reference.id.is_empty()
+            && reference.id.len() <= 128
+            && reference
+                .id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+            && !reference.machine_id.is_empty()
+            && reference.machine_id.len() <= 256,
+        "invalid review reference"
+    );
+    let status = crate::transport::call_protected(
+        &reference.socket,
+        &crate::protocol::Request::ExecutionStatus {
+            id: reference.id.clone(),
+        },
+    )?;
+    ensure!(
+        status["id"] == reference.id && status["state"] == "pending",
+        "review is not pending"
+    );
+    let pending = &status["pending"];
+    ensure!(
+        pending["envelope"]["id"] == reference.id,
+        "wrong review reference"
+    );
+    let bytes = serde_json::to_vec(pending)?;
+    prepare(&bytes, &reference.machine_id, crate::broker::now())?;
+    Ok(bytes)
+}
+
+/// Retrieve and validate a pending request from a root-authenticated local socket.
+/// The socket and machine pin must come from trusted enrollment, not an agent's request.
+/// Returns byte count, -1 on failure, -2 for insufficient capacity; errors write nothing.
+/// This only fetches status: it cannot submit approval or dispatch a command.
+///
+/// # Safety
+/// Input must reference input_len readable bytes; output must reference capacity writable
+/// bytes disjoint from input.
+#[no_mangle]
+pub unsafe extern "C" fn sudo_relay_fetch_review(
+    input: *const u8,
+    input_len: usize,
+    output: *mut u8,
+    capacity: usize,
+) -> isize {
+    if input.is_null() || output.is_null() || input_len == 0 || input_len > 4096 {
+        return -1;
+    }
+    let result = std::panic::catch_unwind(|| {
+        fetch_review(unsafe { std::slice::from_raw_parts(input, input_len) })
+    });
+    match result {
+        Ok(Ok(bytes)) if bytes.len() <= capacity => {
+            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), output, bytes.len()) };
+            bytes.len() as isize
+        }
+        Ok(Ok(_)) => -2,
+        _ => -1,
+    }
+}
+
 /// Read at most 4096 bytes from a root-protected policy file.
 /// Returns byte count, -1 on invalid/unprotected input, -2 for insufficient capacity.
 ///
@@ -153,6 +226,28 @@ pub unsafe extern "C" fn sudo_relay_prepare_review(
 mod tests {
     use super::*;
     use serde_json::{json, Value};
+
+    #[test]
+    fn native_fetch_rejects_invalid_references_without_output() {
+        for input in [
+            b"null".as_slice(),
+            br#"{"socket":"relative","id":"request","machine_id":"host"}"#,
+            br#"{"socket":"/missing.sock","id":"","machine_id":"host"}"#,
+            br#"{"socket":"/missing.sock","id":"request","machine_id":"host","command":"injected"}"#,
+        ] {
+            let mut output = [0xaa; 32];
+            assert_eq!(unsafe { sudo_relay_fetch_review(input.as_ptr(), input.len(), output.as_mut_ptr(), output.len()) }, -1);
+            assert_eq!(output, [0xaa; 32]);
+        }
+        let mut output = [0xaa; 32];
+        assert_eq!(
+            unsafe {
+                sudo_relay_fetch_review(std::ptr::null(), 1, output.as_mut_ptr(), output.len())
+            },
+            -1
+        );
+        assert_eq!(output, [0xaa; 32]);
+    }
 
     #[test]
     fn native_policy_errors_leave_output_untouched() {

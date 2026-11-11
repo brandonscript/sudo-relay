@@ -86,3 +86,13 @@ matching-request acknowledgement checks. It compiles but needs a human hardware
 trial. The pipe test itself is controlled by the fixture process; it is not
 authenticated production IPC. Protected enrollment, crash-before-reply handling
 and rollback recovery remain unverified.
+
+### Protected request retrieval
+
+`BrokerReview(protectedSocket:requestID:pairedMachine:...)` retrieves a request by
+ID through the root-authenticated Unix socket bridge. Socket and machine identity
+must come from trusted enrollment; they are not trusted merely because the caller
+supplied them. The C bridge validates the returned request before returning bytes,
+and the model preserves its existing validation/rendering path. This API cannot
+approve or execute. The interactive lab still uses its explicit fixture mode;
+protected enrollment and native UI connection to this endpoint remain unfinished.

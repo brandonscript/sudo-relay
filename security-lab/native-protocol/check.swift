@@ -121,6 +121,11 @@ struct Check {
                 machineName: "same-label", operatingSystem: "macOS test", account: "test-user", now: 1700000001)
             preconditionFailure("wrong machine accepted")
         } catch ReviewError.invalidRequest { }
+        do {
+            _ = try BrokerReview(protectedSocket: root.appendingPathComponent("untrusted.sock"), requestID: "test-reference",
+                pairedMachine: "fixture-machine", machineName: "test-host", operatingSystem: "macOS test", account: "test-user", now: 1700000001)
+            preconditionFailure("Unprotected native socket accepted")
+        } catch ReviewError.invalidAuthority { }
         try checkPeerPolicyBoundary()
         try checkDurableReceipt(root: root)
         let accepted: [String: Any] = ["receipt_only": true, "commands_executed": 0, "approval_consumed": true,

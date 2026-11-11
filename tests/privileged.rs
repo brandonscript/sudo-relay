@@ -636,10 +636,42 @@ fn native_receipt_peer(config: &Config) {
         return;
     }
     // Retrieve the frozen request directly from the root peer, never from agent-supplied display data.
-    let value =
-        transport::call_protected(&config.socket, &Request::ExecutionStatus { id: argument })
-            .unwrap();
-    let pending: PendingView = serde_json::from_value(value["pending"].clone()).unwrap();
+    unsafe extern "C" {
+        fn sudo_relay_fetch_review(
+            input: *const u8,
+            input_len: usize,
+            output: *mut u8,
+            capacity: usize,
+        ) -> isize;
+    }
+    let fetch = |id: &str, machine: &str, capacity: usize| {
+        let reference = serde_json::to_vec(
+            &serde_json::json!({"socket": config.socket, "id": id, "machine_id": machine}),
+        )
+        .unwrap();
+        let mut output = vec![0xaa; 65536];
+        let count = unsafe {
+            sudo_relay_fetch_review(
+                reference.as_ptr(),
+                reference.len(),
+                output.as_mut_ptr(),
+                capacity,
+            )
+        };
+        (count, output)
+    };
+    for (id, machine, capacity, expected) in [
+        (argument.as_str(), "wrong-machine", 65536, -1),
+        ("unknown-request", config.machine_id.as_str(), 65536, -1),
+        (argument.as_str(), config.machine_id.as_str(), 1, -2),
+    ] {
+        let (count, output) = fetch(id, machine, capacity);
+        assert_eq!(count, expected);
+        assert!(output.iter().all(|byte| *byte == 0xaa));
+    }
+    let (count, output) = fetch(&argument, &config.machine_id, 65536);
+    assert!(count > 0);
+    let pending: PendingView = serde_json::from_slice(&output[..count as usize]).unwrap();
     assert_eq!(pending.envelope.machine_id, config.machine_id);
     if operation == "native_agent_approve" {
         assert!(transport::call_protected(

@@ -379,3 +379,18 @@ root UID before sending request bytes. Its local negative test rejects a user-ow
 socket before connecting. Compilation and lint pass with and without the lab
 feature; the new protected roundtrip awaits disposable Linux/macOS CI. Actual
 Swift/native UI integration with this root socket remains open.
+
+### Native protected fetch bridge
+
+The protected socket test now retrieves the pending envelope through
+`sudo_relay_fetch_review`, the same C ABI used by the native review model. Wrong
+machine pins and unknown IDs must fail; insufficient output capacity must return
+its distinct failure code; all failures leave sentinel-filled output unchanged.
+The valid positive control returns the exact root-broker request used for signing.
+These additions await disposable root CI. The preceding socket roundtrip passed
+full CI run 42942110672.
+
+Local Rust tests reject null/malformed/relative/unknown-field reference input with
+no output; the Swift model rejects an unprotected endpoint without fallback. The
+operation fetches only; no approval submission is available through this API.
+Trusted enrollment of the socket/machine pin and native hardware use remain open.

@@ -55,6 +55,22 @@ struct BrokerReview: NativeReviewContent {
         }
     }
 
+    init(protectedSocket: URL, requestID: String, pairedMachine: String, machineName: String,
+         operatingSystem: String, account: String, now: Int64) throws {
+        struct Reference: Encodable { let socket: String; let id: String; let machine_id: String }
+        let reference = try JSONEncoder().encode(Reference(socket: protectedSocket.path, id: requestID, machine_id: pairedMachine))
+        var output = [UInt8](repeating: 0, count: 65536)
+        let count = reference.withUnsafeBytes { input in
+            output.withUnsafeMutableBufferPointer { destination in
+                sudo_relay_fetch_review(input.bindMemory(to: UInt8.self).baseAddress, reference.count,
+                    destination.baseAddress, destination.count)
+            }
+        }
+        guard count > 0, count <= output.count else { throw ReviewError.invalidAuthority }
+        try self.init(authenticatedPending: Data(output.prefix(count)), pairedMachine: pairedMachine,
+            machineName: machineName, operatingSystem: operatingSystem, account: account, now: now)
+    }
+
     init(authenticatedPending: Data, pairedMachine: String, machineName: String,
          operatingSystem: String, account: String, now: Int64) throws {
         guard now >= 0, authenticatedPending.count <= 65536, !pairedMachine.isEmpty,

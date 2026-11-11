@@ -251,3 +251,21 @@ roundtrip requires disposable CI verification. It is the protected-store transpo
 prerequisite, not finished native enrollment, UI integration, sponsor binding or
 Touch ID evidence. Process-crash cases from the preceding increment passed the
 full Linux/macOS CI run 42941491819.
+
+### Native retrieval from the protected socket
+
+The root-store socket fixture passed full Linux/macOS CI run 42942110672. The
+native protocol bridge now exposes a read-only fetch operation accepting only a
+socket path, request ID and enrolled machine pin. It authenticates the root peer,
+fetches pending status, checks both returned IDs and validates the envelope,
+digest, canonical bytes, machine and expiry before returning review data. It
+cannot submit an approval. A new `BrokerReview` initializer uses that operation
+and retains the existing rendering and decision-byte validation.
+
+Local malformed-reference/no-output tests, Swift rejection of an unprotected
+endpoint, native protocol checks and lint pass. The extended root CI fixture now
+uses this same C ABI and checks wrong-machine, unknown-request and small-buffer
+rejection before a successful read; those new cases await CI. The socket and
+machine pin still require administrator enrollment. This initializer does not
+create that enrollment, persist a signing key or connect the interactive lab UI
+to a root service automatically. No personal-machine root service was installed.
