@@ -43,6 +43,19 @@ With sharing off, both streams are drained without retaining content. The broker
 
 The trusted parent host supplies `share_output_preference` in `approval-host-init`. The card sends human checkbox changes as `approval-output-preference` and includes `share_output` in `approval-human-decision`. The parent remembers the preference, but must obtain fresh approval and sign the explicit choice for each request. The preview host stores the preference in its browser origin's local storage, defaulting off when unavailable; it still cannot sign.
 
+The root-managed key file selects the signature algorithm. Existing bare 32-byte
+hex keys use strict Ed25519 verification and 64-byte signatures. Keys prefixed
+`p256-sha256:` contain an uncompressed 65-byte SEC1 point; they use ECDSA P-256
+with SHA-256 and ASN.1 DER signatures (at most 72 bytes). Both sign the exact v2
+decision bytes above. No algorithm selector is accepted from the approval message,
+and verification does not try another algorithm after failure. P-256 replay is
+tracked by consumed request identity, not signature byte equality.
+
+P-256 support is cryptographic compatibility, not a WebAuthn verifier or proof of
+biometric use. A software P-256 key can sign the same bytes. Hardware enforcement
+requires protected enrollment and the authenticated reviewer; those remain
+unfinished. The current native lab still uses its separate JSON receipt domain.
+
 Ed25519 verification uses strict verification. The broker compares the supplied number after authenticating the signature; three authenticated wrong attempts cancel the request. UI mismatches do not send a signature and therefore do not count as broker attempts.
 
 ## State and MCP

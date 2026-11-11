@@ -76,6 +76,14 @@ On the trusted host, run `npm run keygen -- /private/path/approver.pem` from `ui
 sudo /usr/local/libexec/sudo-relay/broker pair /etc/sudo-relay/config.json desktop PUBLIC_KEY_HEX
 ```
 
+For a future protected native signer, the broker also accepts
+`pair-p256 CONFIG KEY_ID UNCOMPRESSED_SEC1_PUBLIC_KEY_HEX`. This is an explicit
+administrator operation, validates the public point, and refuses to overwrite an
+existing key ID. It expects the 65-byte public representation, not a private key
+or PEM file. The command adds verification support; it does not install a working
+Touch ID adapter or attest that a key is hardware-protected. Do not pair the
+published interoperability fixture key for real use.
+
 Pin the machine UUID in the host adapter. Pairing a host is an administrative trust decision. Public keys are re-read on every approval so revocation takes effect without restarting:
 
 ```sh

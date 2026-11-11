@@ -1,7 +1,7 @@
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { createHash, generateKeyPairSync, sign, verify } from 'node:crypto';
+import { createHash, createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
 import { hex, payload, approvalPayload, parsePending, verifyPending, type Envelope, type Pending, type Approval } from '../src/protocol.js';
 import { approveOnce, type TrustedHost } from '../src/adapter.js';
 
@@ -80,5 +80,21 @@ test('long execution limits remain bounded, signed and separate from approval ex
     value.envelope.spec.timeout_secs = timeout;
     value.signing_payload = hex(payload(value.envelope));
     assert.throws(() => parsePending(value), /limits/);
+  }
+});
+
+test('CryptoKit P-256 DER signatures cover the existing CBOR decisions', () => {
+  const vector = JSON.parse(readFileSync(new URL('./p256-fixture.json', import.meta.url), 'utf8')) as Record<string, string>;
+  const pending = parsePending(JSON.parse(readFileSync(new URL('./fixture.json', import.meta.url), 'utf8')) as unknown);
+  const point = Buffer.from(vector['public_key_sec1']!, 'hex');
+  assert.equal(point.length, 65); assert.equal(point[0], 4);
+  const key = createPublicKey({format: 'jwk', key: {kty: 'EC', crv: 'P-256',
+    x: point.subarray(1, 33).toString('base64url'), y: point.subarray(33).toString('base64url')}});
+  for (const [share, suffix] of [[true, 'shared'], [false, 'withheld']] as const) {
+    const bytes = approvalPayload(pending, share);
+    assert.equal(hex(bytes), vector[`payload_${suffix}`]);
+    const signature = Buffer.from(vector[`signature_der_${suffix}`]!, 'hex');
+    assert.equal(verify('sha256', bytes, key, signature), true);
+    assert.equal(verify('sha256', approvalPayload(pending, !share), key, signature), false);
   }
 });

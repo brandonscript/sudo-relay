@@ -6,6 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use sudo_relay::{
+    approval_key::ApprovalKey,
     broker::{protected_path, Config},
     transport,
 };
@@ -14,7 +15,8 @@ const HELP: &str = "sudo-relay broker (experimental)
 
 broker [--development] init CONFIG STATE_DIR SOCKET AGENT_UID APPROVER_UID SOCKET_GID
 broker [--development] serve CONFIG
-broker [--development] pair CONFIG KEY_ID PUBLIC_KEY_HEX
+broker [--development] pair CONFIG KEY_ID ED25519_PUBLIC_KEY_HEX
+broker [--development] pair-p256 CONFIG KEY_ID UNCOMPRESSED_SEC1_PUBLIC_KEY_HEX
 broker [--development] revoke CONFIG KEY_ID
 
 Production commands require root. --development requires non-root and never elevates.
@@ -94,13 +96,16 @@ fn main() -> Result<()> {
         Some("serve") if args.len() == 2 => {
             transport::serve(load(Path::new(&args[1]), development)?, development)?
         }
-        Some("pair") if args.len() == 4 => {
+        Some("pair" | "pair-p256") if args.len() == 4 => {
             let config = load(Path::new(&args[1]), development)?;
             validate_key_id(&args[2])?;
-            let bytes: [u8; 32] = hex::decode(&args[3])?
-                .try_into()
-                .map_err(|_| anyhow::anyhow!("expected a 32-byte public key"))?;
-            ed25519_dalek::VerifyingKey::from_bytes(&bytes)?;
+            let encoded = if args[0] == "pair-p256" {
+                format!("p256-sha256:{}", args[3].to_ascii_lowercase())
+            } else {
+                ensure!(args[3].len() == 64, "expected a 32-byte Ed25519 public key");
+                args[3].to_ascii_lowercase()
+            };
+            ApprovalKey::parse(&encoded)?;
             let keys = config.state_dir.join("keys");
             if !development {
                 protected_path(&keys, 0)?;
@@ -110,7 +115,7 @@ fn main() -> Result<()> {
                 .create_new(true)
                 .mode(0o600)
                 .open(keys.join(format!("{}.pub", args[2])))?;
-            file.write_all(hex::encode(bytes).as_bytes())?;
+            file.write_all(encoded.as_bytes())?;
             file.sync_all()?;
             fs::File::open(keys)?.sync_all()?;
             println!("Approver paired: {}", args[2]);

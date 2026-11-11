@@ -753,3 +753,134 @@ fn execution_limit_configuration_preserves_old_defaults_and_rejects_unbounded_va
         assert!(config.validate(true).is_err());
     }
 }
+
+#[test]
+fn cryptokit_p256_vectors_verify_exact_cbor_and_reject_alteration() {
+    use sudo_relay::approval_key::ApprovalKey;
+    let vector: serde_json::Value =
+        serde_json::from_str(include_str!("../ui/test/p256-fixture.json")).unwrap();
+    let fixture: PendingView =
+        serde_json::from_str(include_str!("../ui/test/fixture.json")).unwrap();
+    let public = vector["public_key_sec1"].as_str().unwrap();
+    let key = ApprovalKey::parse(&format!("p256-sha256:{public}")).unwrap();
+    for (share, suffix) in [(true, "shared"), (false, "withheld")] {
+        let bytes = fixture.envelope.approval_payload(share).unwrap();
+        assert_eq!(hex::encode(&bytes), vector[format!("payload_{suffix}")]);
+        let signature =
+            hex::decode(vector[format!("signature_der_{suffix}")].as_str().unwrap()).unwrap();
+        key.verify(&bytes, &signature).unwrap();
+        assert!(key
+            .verify(
+                &fixture.envelope.approval_payload(!share).unwrap(),
+                &signature
+            )
+            .is_err());
+        let mut trailing = signature.clone();
+        trailing.push(0);
+        assert!(key.verify(&bytes, &trailing).is_err());
+        assert!(key
+            .verify(&bytes, &signature[..signature.len() - 1])
+            .is_err());
+        assert!(key.verify(&bytes, &[0; 64]).is_err());
+        assert!(key.verify(&bytes, &[0; 73]).is_err());
+        let ed =
+            ApprovalKey::parse(&hex::encode(Setup::new().key.verifying_key().to_bytes())).unwrap();
+        assert!(ed.verify(&bytes, &signature).is_err());
+    }
+    for invalid in [
+        format!("p256-sha256:04{}", "00".repeat(64)),
+        format!("p256-sha256:{}", "02".repeat(33)),
+        format!("unknown:{public}"),
+        public.to_owned(),
+    ] {
+        assert!(ApprovalKey::parse(&invalid).is_err());
+    }
+}
+
+#[test]
+fn p256_approval_binds_output_command_key_and_consumption_without_execution() {
+    use p256::ecdsa::{signature::Signer as _, Signature, SigningKey as P256Key};
+    let setup = Setup::new();
+    let key = P256Key::from_slice(&[11; 32]).unwrap();
+    fs::write(
+        setup.dir.path().join("keys/test.pub"),
+        format!(
+            "p256-sha256:{}",
+            hex::encode(key.verifying_key().to_sec1_point(false))
+        ),
+    )
+    .unwrap();
+    let mut broker = setup.broker();
+    let envelope = setup.request(&mut broker);
+    assert!(broker
+        .handle(setup.approval(&envelope), setup.config.approver_uid, 101)
+        .is_err());
+    let approve = |request: &Envelope, signer: &P256Key| {
+        let signature: Signature = signer.sign(&request.approval_payload(false).unwrap());
+        Request::Approve {
+            id: request.id.clone(),
+            key_id: "test".into(),
+            number: request.number.clone(),
+            share_output: false,
+            signature: hex::encode(signature.to_der()),
+        }
+    };
+    let mut changed = envelope.clone();
+    changed.spec.reason.push('!');
+    assert!(broker
+        .handle(approve(&changed, &key), setup.config.approver_uid, 101)
+        .is_err());
+    assert!(broker
+        .handle(
+            approve(&envelope, &P256Key::from_slice(&[12; 32]).unwrap()),
+            setup.config.approver_uid,
+            101
+        )
+        .is_err());
+    let mut changed_output = approve(&envelope, &key);
+    if let Request::Approve { share_output, .. } = &mut changed_output {
+        *share_output = true;
+    }
+    assert!(broker
+        .handle(changed_output, setup.config.approver_uid, 101)
+        .is_err());
+    let (_, job) = broker
+        .handle(approve(&envelope, &key), setup.config.approver_uid, 101)
+        .unwrap();
+    assert!(!job.unwrap().share_output);
+    assert!(broker
+        .handle(approve(&envelope, &key), setup.config.approver_uid, 102)
+        .is_err());
+}
+
+#[test]
+fn p256_pairing_is_explicit_validated_and_non_overwriting() {
+    use std::process::Command as Process;
+    let setup = Setup::new();
+    let config = setup.dir.path().join("config.json");
+    fs::write(&config, serde_json::to_vec(&setup.config).unwrap()).unwrap();
+    let vector: serde_json::Value =
+        serde_json::from_str(include_str!("../ui/test/p256-fixture.json")).unwrap();
+    let public = vector["public_key_sec1"].as_str().unwrap();
+    let pair = |command: &str, id: &str, key: &str| {
+        Process::new(env!("CARGO_BIN_EXE_broker"))
+            .args(["--development", command])
+            .arg(&config)
+            .args([id, key])
+            .output()
+            .unwrap()
+    };
+    assert!(!pair("pair", "native", public).status.success());
+    assert!(!pair("pair-p256", "native", &"00".repeat(65))
+        .status
+        .success());
+    assert!(!setup.dir.path().join("keys/native.pub").exists());
+    assert!(pair("pair-p256", "native", public).status.success());
+    let paired = fs::read_to_string(setup.dir.path().join("keys/native.pub")).unwrap();
+    assert_eq!(paired, format!("p256-sha256:{public}"));
+    assert!(!pair("pair-p256", "native", public).status.success());
+    assert_eq!(
+        fs::read_to_string(setup.dir.path().join("keys/native.pub")).unwrap(),
+        paired
+    );
+}

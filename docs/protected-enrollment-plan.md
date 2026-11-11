@@ -80,3 +80,32 @@ user for a private signing key in chat.
 
 The final two deployment/recovery properties cannot be established by the current
 same-user lab. Keep their checks open until the protected fixture actually exists.
+
+## P-256 compatibility increment
+
+The broker now supports administrator-selected P-256/SHA-256 public keys alongside
+legacy Ed25519 keys, signing the existing canonical CBOR v2 decision bytes. This
+avoids making the native lab's JSON protocol a production authorization format.
+`pair-p256` records an explicit algorithm prefix; incoming requests cannot choose
+or downgrade it. DER parsing and elliptic-curve verification use
+[RustCrypto p256 0.14](https://docs.rs/p256/0.14.0/p256/ecdsa/index.html), with
+`ecdsa` and `std` features and default features disabled.
+
+`ui/test/p256-fixture.json` contains CryptoKit-generated signatures over both
+existing sharing decisions. Rust and Node verification pass against those exact
+bytes, with changed sharing rejected. The generation script uses a disposable
+software key, writes no private key, and makes no biometric claim. Broker tests
+also cover wrong keys, altered request/output, malformed signatures/points,
+explicit non-overwriting pairing and replay; no executor is called.
+
+This is not complete native integration. The native reviewer must still obtain
+and validate the production request through authenticated IPC, display the same
+model, and sign those exact CBOR bytes. Protected enrollment must distinguish a
+biometric-required reviewer from a software/session signer; a P-256 key or a
+label is insufficient. WebAuthn requires its own challenge/origin/RP/UV checks,
+not simply this bare-signature verification path. Optional modes remain explicit;
+there is no silent fallback.
+
+The dependency and its transitive graph are locked. This increment is not a full
+cryptographic dependency audit; upstream advisories and release provenance still
+need the release review already listed in the backlog.

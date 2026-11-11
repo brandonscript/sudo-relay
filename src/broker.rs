@@ -1,7 +1,7 @@
+use crate::approval_key::ApprovalKey;
 use crate::execution::{self, Outcome};
 use crate::protocol::{Envelope, Reply, Request, MAX_EXECUTION_TIMEOUT_SECS};
 use anyhow::{ensure, Context, Result};
-use ed25519_dalek::{Signature, VerifyingKey};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -321,7 +321,7 @@ impl Broker {
             attempts,
         ))
     }
-    fn key(&self, id: &str) -> Result<VerifyingKey> {
+    fn key(&self, id: &str) -> Result<ApprovalKey> {
         ensure!(
             !id.is_empty()
                 && id.len() <= 64
@@ -335,10 +335,7 @@ impl Broker {
         if !self.development {
             protected_path(&path, self.owner)?;
         }
-        let bytes: [u8; 32] = hex::decode(fs::read_to_string(path)?.trim())?
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("public key must be 32 bytes"))?;
-        Ok(VerifyingKey::from_bytes(&bytes)?)
+        ApprovalKey::parse(&fs::read_to_string(path)?)
     }
     pub fn handle(&mut self, req: Request, uid: u32, time: u64) -> Result<(Reply, Option<Job>)> {
         ensure!(
@@ -427,9 +424,10 @@ impl Broker {
                     "execution timeout exceeds administrator maximum"
                 );
                 let key = self.key(&key_id)?;
-                let signature = Signature::from_slice(&hex::decode(signature)?)?;
+                ensure!(signature.len() <= 144, "approval signature is too long");
+                let signature = hex::decode(signature)?;
                 ensure!(env.version == 2, "unsupported approval version");
-                key.verify_strict(&env.approval_payload(share_output)?, &signature)
+                key.verify(&env.approval_payload(share_output)?, &signature)
                     .context("invalid approval signature")?;
                 if number != env.number {
                     self.db
