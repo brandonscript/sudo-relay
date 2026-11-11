@@ -12,11 +12,11 @@ python3 security-lab/xpc-peer/check.py
 
 The harness builds two small processes into temporary app/XPC bundles, signs
 them ad hoc with the hardened-runtime option, pins their exact code-directory
-hashes, and runs eight cases. The signed-review case creates disposable software keys
+hashes, and runs nine cases. The signed-review case creates disposable software keys
 in the temporary fixture directory. It uses no signing certificate, password,
 biometric prompt, network listener, sudo/PAM change or installed service.
-macOS launches the bundled helper on demand. Helpers exit on disconnection or
-after six minutes (allowing a five-minute native review); each client has a ten-second deadline and the harness has
+macOS launches the bundled helper on demand. Helpers retain state across individual
+connection closures, subject to OS lifecycle management, with a hard limit of six minutes (allowing a five-minute native review); each client has a ten-second deadline and the harness has
 bounded subprocess timeouts. Temporary bundles and receipts are removed at exit.
 
 The development sandbox prevented the initial positive control from running;
@@ -43,6 +43,7 @@ succeeded. Hosted-runner results are separate from local hardware/UI checks.
 | Changed service, original pin, consequential call sent before handshake | Client rejects the reply **after one remote receipt was created** (`4102`). Known unsafe sequence. |
 | Signed review after authenticated handshake | Altered output choice rejected, valid proof accepted once, replay rejected. |
 | Cancel before submitting a valid signed decision | Zero receipts; proof rejected. |
+| Second authenticated connection, then close the first | Status remains approved; replay rejected. |
 
 Variants retain the same account and bundle identifier; a changed sealed resource
 and fresh ad-hoc signature produce a different code identity. Bundle signatures
@@ -134,10 +135,30 @@ this client without invoking biometrics. The manual app runs these steps:
 Manual checks still required for this new path: successful approval, denial,
 fingerprint cancellation, expiry while authentication is open, and disconnects
 before/after submission. Prior same-process hardware trials do not prove this
-integration. The initial separate-process hardware trial is pending.
+integration. The first unattended separate-process trial reached its six-minute deadline and
+logged `native-review-timeout-outcome-unconfirmed`. No interactive signature or
+receipt was logged. This is not a successful hardware trial; a fresh user-run
+check remains required. It was not automatically reopened.
 
 This enrollment is deliberately self-created by the fixture, not administrator
 protected. Both processes and the public-key/policy files are agent-writable.
 No durable ledger or production key exists. A new launch creates a new enrollment;
 this is unsuitable for production restart/recovery. The prepared app directory
 is retained for the manual run; remove that exact temporary directory afterward.
+
+## Connection loss and status
+
+The ninth case passed locally on November 10, 2026. It accepts one software-signed
+receipt, authenticates a second connection with a fresh harmless handshake, closes
+the first, and checks the original request is still approved and replay fails.
+The second channel stays alive throughout; this does **not** test service restart,
+a crash, or a lost submission reply. The service no longer exits just because one
+of several clients disconnects. Its six-minute safety deadline remains.
+
+Status is read-only except that observing expiry makes it terminal. Unknown request
+IDs return `unknown`, never `pending`. Denial cannot overwrite approval or observed
+expiry. Thirteen native tests cover these terminal states, including an earlier
+clock value after expiry and a new verifier reporting an old request as unknown.
+This is not persistent clock-rollback protection: no durable state survives service
+exit, and an unobserved clock rollback remains outside these checks. The native UI
+still does not reconnect automatically or retry an ambiguous submission.

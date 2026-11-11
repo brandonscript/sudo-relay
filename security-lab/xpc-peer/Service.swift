@@ -17,6 +17,11 @@ final class ReceiptService: NSObject, NSXPCListenerDelegate, PeerReceiptProtocol
         } else { verifier = nil }
     }
 
+    func status(_ id: String, reply: @escaping @Sendable (String) -> Void) {
+        guard id.utf8.count <= 36, let id = UUID(uuidString: id), let verifier else { reply("unknown"); return }
+        reply(verifier.status(id: id, now: Int64(Date().timeIntervalSince1970)).rawValue)
+    }
+
     func cancel(reply: @escaping @Sendable () -> Void) {
         verifier?.deny()
         reply()
@@ -39,7 +44,7 @@ final class ReceiptService: NSObject, NSXPCListenerDelegate, PeerReceiptProtocol
         connection.setCodeSigningRequirement(policy.client)
         connection.exportedInterface = NSXPCInterface(with: PeerReceiptProtocol.self)
         connection.exportedObject = self
-        connection.invalidationHandler = { exit(0) }
+        // Keep bounded verifier state when one client disconnects; a second connection may query it.
         connection.resume()
         return true
     }

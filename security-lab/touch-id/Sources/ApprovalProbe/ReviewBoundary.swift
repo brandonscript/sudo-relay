@@ -109,6 +109,8 @@ private struct ReviewDecision: Codable {
     let authentication: String
 }
 
+public enum ReviewStatus: String, Sendable { case pending, approved, denied, expired, unknown }
+
 public struct ReviewReceipt: Sendable {
     public let id: UUID
     public let decisionDigest: String
@@ -123,7 +125,7 @@ public final class ReviewReceiptVerifier: @unchecked Sendable {
     private let request: ReviewRequest
     private let signer: P256.Signing.PublicKey
     private let authority: Curve25519.Signing.PrivateKey
-    private var decided = false
+    private var state = ReviewStatus.pending
 
     public init(signer: P256.Signing.PublicKey, now: Int64) {
         request = ReviewRequest(enrollment: UUID(), now: now)
@@ -132,19 +134,27 @@ public final class ReviewReceiptVerifier: @unchecked Sendable {
 
     public func issue() throws -> (bytes: Data, signature: Data, authority: Curve25519.Signing.PublicKey) {
         lock.lock(); defer { lock.unlock() }
-        guard !decided else { throw ReviewError.alreadyDecided }
+        guard state == .pending else { throw ReviewError.alreadyDecided }
         let bytes = try request.bytes()
         return (bytes, try authority.signature(for: bytes), authority.publicKey)
     }
 
     public func deny() {
         lock.lock(); defer { lock.unlock() }
-        decided = true
+        if state == .pending { state = .denied }
+    }
+
+    public func status(id: UUID, now: Int64) -> ReviewStatus {
+        lock.lock(); defer { lock.unlock() }
+        guard id == request.id else { return .unknown }
+        if state == .pending && now >= request.expiresAt { state = .expired }
+        return state
     }
 
     public func consume(decision bytes: Data, signature: Data, now: Int64) throws -> ReviewReceipt {
         lock.lock(); defer { lock.unlock() }
-        guard !decided else { throw ReviewError.alreadyDecided }
+        guard state == .pending else { throw ReviewError.alreadyDecided }
+        if now >= request.expiresAt { state = .expired; throw ReviewError.expired }
         try request.validate(now: now)
         guard bytes.count <= 16384, signature.count <= 80 else { throw ReviewError.invalidProof }
         let decision = try JSONDecoder().decode(ReviewDecision.self, from: bytes)
@@ -152,7 +162,7 @@ public final class ReviewReceiptVerifier: @unchecked Sendable {
               try decision.request == request.bytes(), try encoded(decision) == bytes,
               signer.isValidSignature(try P256.Signing.ECDSASignature(derRepresentation: signature), for: bytes)
         else { throw ReviewError.invalidProof }
-        decided = true
+        state = .approved
         return ReviewReceipt(id: request.id, decisionDigest: SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(),
                              shareOutput: decision.shareOutput)
     }

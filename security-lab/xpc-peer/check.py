@@ -77,7 +77,7 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
     original_service = cdhash(helper)
     results: list[dict[str, object]] = []
     for case in ["allowed", "variant-client-allowed", "substituted-client", "variant-service-allowed",
-                 "substituted-service", "substituted-service-without-handshake", "signed-review", "signed-denied"]:
+                 "substituted-service", "substituted-service-without-handshake", "signed-review", "signed-denied", "signed-reconnect"]:
         case_root = root / case
         app = case_root / "PeerLab.app"
         shutil.copytree(original, app)
@@ -100,15 +100,17 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
         }))
         characterization = case.endswith("without-handshake")
         arguments = ["--characterize-without-handshake"] if characterization else []
-        if case in ["signed-review", "signed-denied"]:
+        if case in ["signed-review", "signed-denied", "signed-reconnect"]:
             run(str(app / "Contents/MacOS/Client"), "--fixture-key")
             arguments = [f"--{case}"]
         result = subprocess.run([str(app / "Contents/MacOS/Client"), *arguments], text=True,
                                 capture_output=True, timeout=15)
         events = [json.loads(line) for line in result.stdout.splitlines()]
         receipt = case_root / "receipt.txt"
-        if case in ["signed-review", "signed-denied"]:
-            expected = "signed-review-one-receipt-alteration-and-replay-rejected" if case == "signed-review" else "signed-review-denied-zero-receipts"
+        if case in ["signed-review", "signed-denied", "signed-reconnect"]:
+            expected = {"signed-review": "signed-review-one-receipt-alteration-and-replay-rejected",
+                        "signed-denied": "signed-review-denied-zero-receipts",
+                        "signed-reconnect": "replacement-peer-verified-approved-replay-rejected"}[case]
             assert result.returncode == 0 and events == [{"event": "peer-verified"},
                 {"event": expected}], (case, result)
             assert not receipt.exists()
@@ -121,7 +123,7 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
             assert events[0]["code"] in (["4102"] if case.startswith("substituted-service") else ["4097", "4102"]), (case, events)
             assert receipt.exists() == characterization, f"{case}: unexpected receipt state"
         results.append({"case": case, "expectation_met": True, "known_unsafe_pattern": characterization,
-                        "receipt_count": 1 if case == "signed-review" else int(receipt.exists()), "events": events})
+                        "receipt_count": 1 if case in ["signed-review", "signed-reconnect"] else int(receipt.exists()), "events": events})
     native_app: str | None = None
     if sys.argv[1:] == ["--prepare-native"]:
         packaged = run("/usr/bin/xcrun", "swift", "-module-cache-path", str(root / "modules"),

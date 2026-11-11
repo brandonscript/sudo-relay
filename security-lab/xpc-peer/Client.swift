@@ -3,7 +3,9 @@ import CryptoKit
 
 @main
 struct Client {
-    static func main() throws {
+    @MainActor static var activeConnection: NSXPCConnection?
+
+    @MainActor static func main() throws {
         guard getuid() != 0 else { exit(2) }
         let arguments = Array(CommandLine.arguments.dropFirst())
         let root = Bundle.main.bundleURL.deletingLastPathComponent()
@@ -13,12 +15,13 @@ struct Client {
             try key.publicKey.rawRepresentation.write(to: root.appendingPathComponent("fixture-public.key"))
             return
         }
-        guard arguments.isEmpty || arguments == ["--characterize-without-handshake"] || arguments == ["--signed-review"] || arguments == ["--signed-denied"] else { exit(2) }
+        guard arguments.isEmpty || arguments == ["--characterize-without-handshake"] || arguments == ["--signed-review"] || arguments == ["--signed-denied"] || arguments == ["--signed-reconnect"] else { exit(2) }
         let policy = try PeerPolicy.load(from: root)
         let connection = NSXPCConnection(serviceName: "local.sudo-relay.peer-service")
         connection.remoteObjectInterface = NSXPCInterface(with: PeerReceiptProtocol.self)
         connection.setCodeSigningRequirement(policy.service)
         connection.resume()
+        activeConnection = connection
         let proxy = connection.remoteObjectProxyWithErrorHandler { @Sendable error in
             report("peer-rejected", error: error)
             exit(1)
@@ -35,7 +38,9 @@ struct Client {
             proxy.hello { response in
                 guard response == "peer-check-hello" else { report("invalid-hello"); exit(2) }
                 report("peer-verified")
-                if arguments == ["--signed-review"] || arguments == ["--signed-denied"] {
+                if arguments == ["--signed-reconnect"] {
+                    Task { @MainActor in await checkReconnect(proxy, root: root, policy: policy) }
+                } else if arguments == ["--signed-review"] || arguments == ["--signed-denied"] {
                     checkSignedReview(proxy, root: root, denied: arguments == ["--signed-denied"])
                 }
                 else { sendReceipt() }
@@ -84,4 +89,46 @@ func checkSignedReview(_ proxy: any PeerReceiptProtocol, root: URL, denied: Bool
             }
         } catch { report("review-failed", error: error); exit(2) }
     }
+}
+
+@MainActor
+func checkReconnect(_ proxy: any PeerReceiptProtocol, root: URL, policy: PeerPolicy) async {
+    do {
+        let packet: (Data?, Data?, Data?) = await withCheckedContinuation { continuation in
+            proxy.review { continuation.resume(returning: ($0, $1, $2)) }
+        }
+        guard let bytes = packet.0, let signature = packet.1, let authority = packet.2 else { report("missing-review"); exit(2) }
+        let review = try AuthenticatedReview(bytes: bytes, signature: signature,
+            authority: Curve25519.Signing.PublicKey(rawRepresentation: authority), now: Int64(Date().timeIntervalSince1970))
+        let key = try P256.Signing.PrivateKey(rawRepresentation: Data(contentsOf: root.appendingPathComponent("fixture-private.key")))
+        let decision = try review.decision(shareOutput: false, now: Int64(Date().timeIntervalSince1970))
+        let proof = try key.signature(for: decision).derRepresentation
+        let accepted: Bool = await withCheckedContinuation { continuation in
+            proxy.submit(decision, signature: proof) { continuation.resume(returning: $0) }
+        }
+        guard accepted else { report("valid-decision-rejected"); exit(2) }
+        let replacement = NSXPCConnection(serviceName: "local.sudo-relay.peer-service")
+        replacement.remoteObjectInterface = NSXPCInterface(with: PeerReceiptProtocol.self)
+        replacement.setCodeSigningRequirement(policy.service)
+        replacement.resume()
+        defer { replacement.invalidate() }
+        let next = replacement.remoteObjectProxyWithErrorHandler { @Sendable error in
+            report("replacement-peer-failed", error: error); exit(2)
+        } as! PeerReceiptProtocol
+        let hello: String = await withCheckedContinuation { continuation in
+            next.hello { continuation.resume(returning: $0) }
+        }
+        guard hello == "peer-check-hello" else { report("invalid-hello"); exit(2) }
+        Client.activeConnection?.invalidate()
+        // A live second channel keeps this test about disconnect, not service restart.
+        let status: String = await withCheckedContinuation { continuation in
+            next.status(review.request.id.uuidString) { continuation.resume(returning: $0) }
+        }
+        guard status == "approved" else { report("lost-consumption-state"); exit(2) }
+        let replay: Bool = await withCheckedContinuation { continuation in
+            next.submit(decision, signature: proof) { continuation.resume(returning: $0) }
+        }
+        guard !replay else { report("replay-accepted"); exit(2) }
+        report("replacement-peer-verified-approved-replay-rejected"); exit(0)
+    } catch { report("review-failed", error: error); exit(2) }
 }

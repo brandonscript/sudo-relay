@@ -147,3 +147,31 @@ private func edit(_ bytes: Data, key: String, value: Any) throws -> Data {
     let review = try AuthenticatedReview(bytes: bytes, signature: authority.signature(for: bytes), authority: authority.publicKey, now: 1000)
     #expect(review.commandText().contains("/usr/bin/printf '' 'a b' 'a'\\''b' '$(id)'"))
 }
+
+@Test func statusPreservesTerminalDecisionsAndUnknownIsNotPending() throws {
+    let key = P256.Signing.PrivateKey()
+    for outcome in ["approved", "denied", "expired", "expired-on-submit"] {
+        let verifier = ReviewReceiptVerifier(signer: key.publicKey, now: 1000)
+        let packet = try verifier.issue()
+        let review = try AuthenticatedReview(bytes: packet.bytes, signature: packet.signature, authority: packet.authority, now: 1000)
+        let id = review.request.id
+        #expect(verifier.status(id: UUID(), now: 1001) == .unknown)
+        #expect(verifier.status(id: id, now: 1001) == .pending)
+        let decision = try review.decision(shareOutput: false, now: 1001)
+        let proof = try key.signature(for: decision).derRepresentation
+        switch outcome {
+        case "approved": _ = try verifier.consume(decision: decision, signature: proof, now: 1001)
+        case "denied": verifier.deny()
+        case "expired-on-submit":
+            #expect(throws: (any Error).self) { try verifier.consume(decision: decision, signature: proof, now: 1300) }
+        default: #expect(verifier.status(id: id, now: 1300) == .expired)
+        }
+        let expected = outcome == "expired-on-submit" ? "expired" : outcome
+        #expect(verifier.status(id: id, now: 1300).rawValue == expected)
+        verifier.deny()
+        #expect(verifier.status(id: id, now: 1001).rawValue == expected)
+        #expect(throws: (any Error).self) { try verifier.consume(decision: decision, signature: proof, now: 1001) }
+        let replacement = ReviewReceiptVerifier(signer: key.publicKey, now: 1001)
+        #expect(replacement.status(id: id, now: 1001) == .unknown)
+    }
+}

@@ -6,6 +6,7 @@ import Security
 protocol PeerReceiptProtocol: Sendable {
     func hello(reply: @escaping @Sendable (String) -> Void)
     func receipt(reply: @escaping @Sendable (String) -> Void)
+    func status(_ id: String, reply: @escaping @Sendable (String) -> Void)
     func cancel(reply: @escaping @Sendable () -> Void)
     func review(reply: @escaping @Sendable (Data?, Data?, Data?) -> Void)
     func submit(_ decision: Data, signature: Data, reply: @escaping @Sendable (Bool) -> Void)

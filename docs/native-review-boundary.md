@@ -94,3 +94,12 @@ This is transport evidence only. Fixture-controlled pins remain writable, transp
 A seventh XPC case now reuses this lab’s request and decision verifier across two processes with disposable software keys: altered output choice and replay are rejected, while the valid proof yields one receipt. It passed locally. This tests signed-message transport, not Touch ID: the native UI/hardware signer is still separate, and enrollment files remain agent-writable. See the XPC README for the fixture’s authentication-mode limitation.
 
 The XPC fixture now has a manual native client sharing `BiometricSigning` and the accepted review form. It retrieves the authenticated request and submits the hardware proof to the separate service. Build and eight automated transport cases pass; the new hardware trial remains pending. This changes process placement, not deployment protection: fixture enrollment and code remain writable, and receipt state is ephemeral.
+
+The first separate-process native trial was left unattended and logged a six-minute
+timeout with unconfirmed outcome; no interactive signature or receipt was logged.
+A hardware pass is still required. The automated XPC suite now has nine cases,
+including live-service connection replacement with fresh peer authentication,
+retained Approved status and rejected replay. Thirteen native tests verify terminal
+status cannot be changed by later cancellation or an earlier clock value after
+observed expiry. Service restart/durable recovery and unobserved clock rollback
+remain unverified; no automatic UI retry was introduced.
