@@ -114,6 +114,14 @@ before signing, enforce signature bounds and stop submission if approval expires
 while the signer is waiting. This removes the old Ed25519-only transport check;
 it does not turn the generic signing callback into a protected native channel.
 
+The [native protocol bridge](../security-lab/native-protocol/README.md) now lets
+Swift reuse Rust's request validation and CBOR encoder. Its foreign-call fixture
+preserves the complete request model and both sharing decisions, and checks
+CryptoKit public signatures. It performs no authentication or signing. The next
+UI integration must take this model only from an authenticated verifier, render
+all execution-relevant fields, and retain the same immutable decision bytes
+through review. Do not forward arbitrary caller bytes to the biometric signer.
+
 The dependency and its transitive graph are locked. This increment is not a full
 cryptographic dependency audit; upstream advisories and release provenance still
 need the release review already listed in the backlog.

@@ -45,6 +45,12 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets --features host-probe -- -D warnings
       - run: cargo test --locked --features host-probe
+      - name: Check native review protocol bridge without authentication or execution
+        if: runner.os == 'macOS'
+        run: |
+          cargo build --locked --lib
+          swiftc -swift-version 6 -warnings-as-errors -I security-lab/native-protocol security-lab/native-protocol/check.swift -L target/debug -lsudo_relay -framework Security -framework SystemConfiguration -liconv -o "$RUNNER_TEMP/native-protocol-check"
+          "$RUNNER_TEMP/native-protocol-check" "$PWD"
       - name: Check isolated Touch ID experiment without hardware authentication
         if: runner.os == 'macOS'
         run: swift test -Xswiftc -warnings-as-errors
