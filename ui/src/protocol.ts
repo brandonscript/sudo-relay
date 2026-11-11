@@ -69,5 +69,5 @@ export async function verifyPending(value: unknown, now = Math.floor(Date.now() 
 }
 export function validateDecision(pending: Pending, number: string, now = Math.floor(Date.now() / 1000)): void {
   if (number !== pending.envelope.number) throw new Error('Confirmation number does not match');
-  if (now >= pending.envelope.expires_at) throw new Error('Request expired');
+  if (now < pending.envelope.created_at || now >= pending.envelope.expires_at) throw new Error('Request expired or not yet valid');
 }

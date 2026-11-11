@@ -143,19 +143,21 @@ test('unknown host algorithms and invalid signature bounds never submit or fall 
   assert.equal(submissions, 0);
 });
 
-test('expiry during human signing prevents submission', async () => {
+test('expiry or rollback before creation during human signing prevents submission', async () => {
   const request = pending();
   let submissions = 0;
   const originalNow = Date.now;
-  const host: TrustedHost = {
-    signatureAlgorithm: 'ed25519', keyId: 'host', machineId: 'test-machine',
-    signHumanApproval: async () => {
-      Date.now = () => request.envelope.expires_at * 1000;
-      return new Uint8Array(64);
-    },
-    submitApproval: async () => { submissions++; },
-  };
-  try { await assert.rejects(approveOnce(request, '42', false, host), /expired/); }
-  finally { Date.now = originalNow; }
+  for (const changedTime of [request.envelope.created_at - 1, request.envelope.expires_at]) {
+    const host: TrustedHost = {
+      signatureAlgorithm: 'ed25519', keyId: 'host', machineId: 'test-machine',
+      signHumanApproval: async () => {
+        Date.now = () => changedTime * 1000;
+        return new Uint8Array(64);
+      },
+      submitApproval: async () => { submissions++; },
+    };
+    try { await assert.rejects(approveOnce(request, '42', false, host), /expired/); }
+    finally { Date.now = originalNow; }
+  }
   assert.equal(submissions, 0);
 });

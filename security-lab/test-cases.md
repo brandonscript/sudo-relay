@@ -234,3 +234,20 @@ appear. The app's selected protocol is sealed in its bundle; failures must not
 switch to the old JSON verifier. Build and software acknowledgement checks pass,
 including wrong-request and malformed acknowledgement rejection; this does not
 count as a hardware pass.
+
+## Clock boundaries (implemented; no execution)
+
+- `approval_before_creation_rejects_without_consuming_the_request`: present an
+  otherwise valid signature one second before its signed creation time. It must
+  reject and leave the request pending. At creation time, that proof consumes
+  once; a subsequent replay rejects. This test failed before the broker guard.
+- `observed_expiry_stays_terminal_after_clock_rollback_and_restart`: observe the
+  expiry boundary, then supply an earlier time, restart the broker and try again.
+  The state stays expired and the proof never produces an execution job.
+- The adapter test moves its mocked clock before creation or beyond expiry while
+  signing is pending. Neither returned signature is submitted to the broker.
+
+These pass locally. Rust tests supply time to `Broker::handle`; TypeScript tests
+temporarily mock `Date.now`. No system clock changes or command execution occur.
+They do not establish monotonic lifetime enforcement while a rollback remains
+inside the valid interval, nor suspend/resume, snapshot or ledger-restore safety.

@@ -149,6 +149,50 @@ fn forged_wrong_key_changed_command_and_cross_machine_approvals_fail() {
     assert!(b.handle(req, s.config.agent_uid, 101).is_err());
     assert_eq!(state(&mut b, &env.id, s.config.agent_uid, 101), "pending");
 }
+
+#[test]
+fn approval_before_creation_rejects_without_consuming_the_request() {
+    let s = Setup::new();
+    let mut broker = s.broker();
+    let env = s.request(&mut broker);
+    assert!(broker
+        .handle(s.approval(&env), s.config.agent_uid, env.created_at - 1)
+        .is_err());
+    assert_eq!(
+        state(&mut broker, &env.id, s.config.agent_uid, env.created_at),
+        "pending"
+    );
+    let (_, job) = broker
+        .handle(s.approval(&env), s.config.agent_uid, env.created_at)
+        .unwrap();
+    assert!(job.is_some());
+    drop(job); // Authorization only: never invoke the executor.
+    assert!(broker
+        .handle(s.approval(&env), s.config.agent_uid, env.created_at + 1)
+        .is_err());
+}
+
+#[test]
+fn observed_expiry_stays_terminal_after_clock_rollback_and_restart() {
+    let s = Setup::new();
+    let mut broker = s.broker();
+    let env = s.request(&mut broker);
+    assert!(broker
+        .handle(s.approval(&env), s.config.agent_uid, env.expires_at)
+        .is_err());
+    assert!(broker
+        .handle(s.approval(&env), s.config.agent_uid, env.created_at + 1)
+        .is_err());
+    drop(broker);
+    let mut broker = s.broker();
+    assert_eq!(
+        state(&mut broker, &env.id, s.config.agent_uid, env.created_at),
+        "expired"
+    );
+    assert!(broker
+        .handle(s.approval(&env), s.config.agent_uid, env.created_at + 1)
+        .is_err());
+}
 #[test]
 fn expiry_cancellation_and_revocation_deny_execution() {
     for mode in ["expired", "cancelled", "revoked"] {

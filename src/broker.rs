@@ -419,6 +419,7 @@ impl Broker {
                     state == State::Pending && time < env.expires_at,
                     "request is not pending"
                 );
+                ensure!(time >= env.created_at, "request is not yet valid");
                 ensure!(
                     env.spec.timeout_secs <= self.config.max_execution_secs,
                     "execution timeout exceeds administrator maximum"
