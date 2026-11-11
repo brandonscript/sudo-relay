@@ -490,12 +490,48 @@ impl Broker {
     pub fn handle_current(&mut self, req: Request, uid: u32) -> Result<(Reply, Option<Job>)> {
         self.handle_with_clock(req, uid, now)
     }
+    #[cfg(feature = "native-receipt-lab")]
+    pub(crate) fn handle_receipt_current(
+        &mut self,
+        req: Request,
+        uid: u32,
+    ) -> Result<(Reply, Option<Job>)> {
+        self.handle_decision(req, uid, now, true)
+    }
     fn handle_with_clock(
         &mut self,
         req: Request,
         uid: u32,
         clock: impl Fn() -> u64,
     ) -> Result<(Reply, Option<Job>)> {
+        self.handle_decision(req, uid, clock, false)
+    }
+    fn handle_decision(
+        &mut self,
+        req: Request,
+        uid: u32,
+        clock: impl Fn() -> u64,
+        receipt_only: bool,
+    ) -> Result<(Reply, Option<Job>)> {
+        let req = match req {
+            Request::ApproveReceipt {
+                id,
+                key_id,
+                number,
+                signature,
+                share_output,
+            } if receipt_only => Request::Approve {
+                id,
+                key_id,
+                number,
+                signature,
+                share_output,
+            },
+            other => {
+                ensure!(!receipt_only, "expected a receipt approval");
+                other
+            }
+        };
         let time = clock();
         ensure!(
             uid == self.config.agent_uid || uid == self.config.approver_uid,
@@ -503,6 +539,9 @@ impl Broker {
         );
         self.expire(time)?;
         match req {
+            Request::ApproveReceipt { .. } => {
+                anyhow::bail!("receipt approval requires receipt-only transport")
+            }
             Request::RequestExecution { mut spec } => {
                 let total: u32 = self
                     .db
@@ -595,7 +634,12 @@ impl Broker {
                 ensure!(signature.len() <= 144, "approval signature is too long");
                 let signature = hex::decode(signature)?;
                 ensure!(env.version == 2, "unsupported approval version");
-                key.verify(&env.approval_payload(share_output)?, &signature)
+                let payload = if receipt_only {
+                    env.receipt_approval_payload(share_output)?
+                } else {
+                    env.approval_payload(share_output)?
+                };
+                key.verify(&payload, &signature)
                     .context("invalid approval signature")?;
                 if number != env.number {
                     self.db
@@ -622,10 +666,14 @@ impl Broker {
                 tx.commit()?;
                 Ok((
                     Reply::success(serde_json::json!({"id":id,"state":"consumed"})),
-                    Some(Job {
-                        envelope: env,
-                        share_output,
-                    }),
+                    if receipt_only {
+                        None
+                    } else {
+                        Some(Job {
+                            envelope: env,
+                            share_output,
+                        })
+                    },
                 ))
             }
         }

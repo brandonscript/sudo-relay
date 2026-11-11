@@ -168,6 +168,13 @@ impl Envelope {
     pub fn approval_payload(&self, share_output: bool) -> Result<Vec<u8>> {
         approval_payload(&self.signing_payload()?, share_output)
     }
+    pub fn receipt_approval_payload(&self, share_output: bool) -> Result<Vec<u8>> {
+        decision_payload(
+            "sudo-relay/receipt-decision/v1",
+            &self.signing_payload()?,
+            share_output,
+        )
+    }
     pub fn view(&self) -> Result<PendingView> {
         let bytes = self.signing_payload()?;
         Ok(PendingView {
@@ -178,10 +185,13 @@ impl Envelope {
     }
 }
 pub fn approval_payload(request_payload: &[u8], share_output: bool) -> Result<Vec<u8>> {
+    decision_payload("sudo-relay/decision/v2", request_payload, share_output)
+}
+fn decision_payload(domain: &str, request_payload: &[u8], share_output: bool) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     ciborium::into_writer(
         &Cbor::Array(vec![
-            Cbor::Text("sudo-relay/decision/v2".into()),
+            Cbor::Text(domain.into()),
             Cbor::Bytes(request_payload.to_vec()),
             Cbor::Bool(share_output),
         ]),
@@ -210,6 +220,14 @@ pub enum Request {
         id: String,
     },
     Approve {
+        id: String,
+        key_id: String,
+        number: String,
+        signature: String,
+        share_output: bool,
+    },
+    /// Only the receipt-only socket dispatcher may consume this proof; never executes.
+    ApproveReceipt {
         id: String,
         key_id: String,
         number: String,

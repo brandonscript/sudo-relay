@@ -54,3 +54,12 @@ The broker remains the final authority for key trust and revocation; this local
 check cannot replace its signature verification. The older same-user fixture
 constructor has no protected key pin and cannot pass this check. Key persistence,
 protected interactive integration and atomic enrollment updates remain open.
+
+Protected receipt decisions use the separate CBOR domain
+`sudo-relay/receipt-decision/v1` and the `approve_receipt` wire method. An
+execution-mode broker rejects that method; changing it to `approve` still fails
+because execution approval uses different signed bytes. Only the receipt-only
+socket dispatcher enables receipt verification, which consumes without returning
+an execution job. The request envelope and output-sharing choice remain bound
+inside the receipt signature. Existing same-user protocol experiments remain
+separate and must not be mistaken for this protected receipt path.

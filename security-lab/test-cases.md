@@ -464,3 +464,19 @@ Local verification for this increment: all fourteen Swift tests pass, including
 the new storage checks; all nineteen ordinary-user XPC regression cases pass.
 NativeClient compiles with Swift 6 warnings-as-errors. Neither the new explicit
 hardware enrollment nor the restart/fingerprint sequence has been run.
+
+### Receipt approval cannot become execution approval
+
+Local test: generate a valid execution signature, relabel its method
+`approve_receipt`, and require the normal broker to reject it without consuming
+the pending request. Then sign the receipt-only decision domain, change the
+method to `approve`, and require signature rejection with the same key, request
+and output choice. A final genuine execution proof returns a job only as a
+positive verification control; discard it without execution.
+
+The protected root socket fixture now uses `approve_receipt`. It first rejects
+an execution-domain signature under that method, then accepts the Swift-produced
+receipt signature once and rejects replay. Dedicated receipt verification must
+return no execution job. These root cases await disposable CI. Local negative
+cases, native bridge checks and lint in both feature configurations pass.
+The preceding restart-preparation increment passed full CI run 42945677976.

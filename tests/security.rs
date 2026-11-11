@@ -98,6 +98,51 @@ fn state(broker: &mut Broker, id: &str, uid: u32, time: u64) -> String {
         .into()
 }
 #[test]
+fn receipt_method_cannot_consume_through_the_execution_broker() {
+    let setup = Setup::new();
+    let mut broker = setup.broker();
+    let envelope = setup.request(&mut broker);
+    let mut receipt = serde_json::to_value(setup.approval(&envelope)).unwrap();
+    receipt["method"] = "approve_receipt".into();
+    assert!(broker
+        .handle(
+            serde_json::from_value(receipt).unwrap(),
+            setup.config.approver_uid,
+            101
+        )
+        .is_err());
+    let receipt_signature = setup
+        .key
+        .sign(&envelope.receipt_approval_payload(true).unwrap());
+    let mut substituted = serde_json::to_value(setup.approval(&envelope)).unwrap();
+    substituted["signature"] = hex::encode(receipt_signature.to_bytes()).into();
+    assert!(broker
+        .handle(
+            serde_json::from_value(substituted).unwrap(),
+            setup.config.approver_uid,
+            101
+        )
+        .is_err());
+    let (status, job) = broker
+        .handle(
+            Request::ExecutionStatus {
+                id: envelope.id.clone(),
+            },
+            setup.config.agent_uid,
+            101,
+        )
+        .unwrap();
+    assert!(job.is_none());
+    assert_eq!(status.value().unwrap()["state"], "pending");
+    // Positive control confirms the rejected receipt contained a valid proof. Never execute its Job.
+    let (_, job) = broker
+        .handle(setup.approval(&envelope), setup.config.approver_uid, 101)
+        .unwrap();
+    assert!(job.is_some());
+    drop(job);
+}
+
+#[test]
 fn request_never_executes_and_replay_never_launches_twice() {
     let s = Setup::new();
     let mut b = s.broker();

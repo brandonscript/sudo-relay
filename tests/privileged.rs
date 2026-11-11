@@ -738,7 +738,7 @@ fn native_receipt_peer(config: &Config) {
         let pending: PendingView = serde_json::from_value(value["pending"].clone()).unwrap();
         assert!(transport::call_protected(
             &config.socket,
-            &Request::Approve {
+            &Request::ApproveReceipt {
                 id: pending.envelope.id,
                 key_id: "native".into(),
                 number: pending.envelope.number,
@@ -777,7 +777,7 @@ fn native_receipt_peer(config: &Config) {
         hex::decode(fetched["review"]["approval_withheld"].as_str().unwrap()).unwrap();
     assert_eq!(
         signing_bytes,
-        pending.envelope.approval_payload(false).unwrap()
+        pending.envelope.receipt_approval_payload(false).unwrap()
     );
     assert_eq!(operation, "native_receipt");
     #[cfg(not(target_os = "macos"))]
@@ -824,11 +824,29 @@ fn native_receipt_peer(config: &Config) {
         assert_eq!(native["withheld"], hex::encode(&signing_bytes));
         assert_eq!(
             native["shared"],
-            hex::encode(pending.envelope.approval_payload(true).unwrap())
+            hex::encode(pending.envelope.receipt_approval_payload(true).unwrap())
         );
         hex::decode(native["signature"].as_str().unwrap()).unwrap()
     };
-    let approval = Request::Approve {
+    // The same key's execution-domain signature must not authorize a receipt.
+    let execution_signature = {
+        use p256::ecdsa::{signature::Signer, Signature, SigningKey};
+        let key = SigningKey::from_slice(&[27; 32]).unwrap();
+        let signature: Signature = key.sign(&pending.envelope.approval_payload(false).unwrap());
+        hex::encode(signature.to_der())
+    };
+    assert!(transport::call_protected(
+        &config.socket,
+        &Request::ApproveReceipt {
+            id: pending.envelope.id.clone(),
+            key_id: "native".into(),
+            number: pending.envelope.number.clone(),
+            share_output: false,
+            signature: execution_signature,
+        }
+    )
+    .is_err());
+    let approval = Request::ApproveReceipt {
         id: pending.envelope.id.clone(),
         key_id: "native".into(),
         number: pending.envelope.number,

@@ -122,6 +122,20 @@ enum Dispatch {
     #[cfg(feature = "native-receipt-lab")]
     ReceiptOnly,
 }
+impl Dispatch {
+    fn handle(
+        &self,
+        broker: &mut Broker,
+        request: Request,
+        uid: u32,
+    ) -> Result<(Reply, Option<crate::broker::Job>)> {
+        #[cfg(feature = "native-receipt-lab")]
+        if matches!(self, Self::ReceiptOnly) && matches!(request, Request::ApproveReceipt { .. }) {
+            return broker.handle_receipt_current(request, uid);
+        }
+        broker.handle_current(request, uid)
+    }
+}
 fn serve_mode(config: Config, development: bool, dispatch: Dispatch) -> Result<()> {
     let broker = Broker::open(config.clone(), development)?;
     let parent = config.socket.parent().context("socket has no parent")?;
@@ -170,10 +184,10 @@ fn serve_mode(config: Config, development: bool, dispatch: Dispatch) -> Result<(
             );
             let bytes = read_line(&mut stream, MAX_REQUEST_BYTES, Duration::from_secs(2))?;
             let request = serde_json::from_slice(&bytes)?;
-            shared
+            let mut broker = shared
                 .lock()
-                .map_err(|_| anyhow::anyhow!("broker state poisoned"))?
-                .handle_current(request, uid)
+                .map_err(|_| anyhow::anyhow!("broker state poisoned"))?;
+            dispatch.handle(&mut broker, request, uid)
         })();
         let (reply, job) = match result {
             Ok(v) => v,

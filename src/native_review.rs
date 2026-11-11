@@ -95,8 +95,11 @@ fn prepare_fetched_review(
     let pending = &status["pending"];
     ensure!(pending["envelope"]["id"] == id, "wrong review reference");
     let bytes = serde_json::to_vec(pending)?;
-    let review: serde_json::Value =
+    let mut review: serde_json::Value =
         serde_json::from_slice(&prepare(&bytes, &enrollment.machine_id, now)?)?;
+    let envelope: Envelope = serde_json::from_value(review["envelope"].clone())?;
+    review["approval_shared"] = hex::encode(envelope.receipt_approval_payload(true)?).into();
+    review["approval_withheld"] = hex::encode(envelope.receipt_approval_payload(false)?).into();
     Ok(serde_json::to_vec(
         &serde_json::json!({"enrollment": enrollment, "review": review}),
     )?)
@@ -346,7 +349,20 @@ mod tests {
             account: "test-user".into(),
         };
         let original = json!({"id":envelope.id,"state":"pending","pending":envelope.view().unwrap(),"receipt_only":true});
-        prepare_fetched_review(&enrollment, &envelope.id, &original, 1700000001).unwrap();
+        let prepared: Value = serde_json::from_slice(
+            &prepare_fetched_review(&enrollment, &envelope.id, &original, 1700000001).unwrap(),
+        )
+        .unwrap();
+        for (field, share) in [("approval_shared", true), ("approval_withheld", false)] {
+            assert_eq!(
+                prepared["review"][field],
+                hex::encode(envelope.receipt_approval_payload(share).unwrap())
+            );
+            assert_ne!(
+                prepared["review"][field],
+                hex::encode(envelope.approval_payload(share).unwrap())
+            );
+        }
         for value in [json!(false), json!(null), json!(1), json!("true")] {
             let mut changed = original.clone();
             changed["receipt_only"] = value;
