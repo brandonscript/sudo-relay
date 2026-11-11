@@ -565,6 +565,36 @@ fn protected_receipt_socket_roundtrip(config: &Config) {
             0
         );
     }
+    let enrollment = serde_json::json!({"version": 1, "receipt_only": true,
+        "machine_id": config.machine_id, "socket": config.socket, "approver_uid": config.approver_uid,
+        "machine_name": "protected-receipt-fixture", "operating_system": "Disposable OS fixture", "account": "test-user"});
+    for (name, field, value, mode) in [
+        ("enrollment.json", "version", serde_json::json!(1), 0o644),
+        (
+            "wrong-machine.json",
+            "machine_id",
+            serde_json::json!(uuid::Uuid::new_v4().to_string()),
+            0o644,
+        ),
+        (
+            "wrong-account.json",
+            "approver_uid",
+            serde_json::json!(10003),
+            0o644,
+        ),
+        (
+            "writable-enrollment.json",
+            "version",
+            serde_json::json!(1),
+            0o666,
+        ),
+    ] {
+        let mut value_record = enrollment.clone();
+        value_record[field] = value;
+        let path = run.join(name);
+        fs::write(&path, serde_json::to_vec(&value_record).unwrap()).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
+    }
     let mut server = Cleanup {
         dir: run.to_path_buf(),
         child: Some(
@@ -644,11 +674,10 @@ fn native_receipt_peer(config: &Config) {
             capacity: usize,
         ) -> isize;
     }
-    let fetch = |id: &str, machine: &str, capacity: usize| {
-        let reference = serde_json::to_vec(
-            &serde_json::json!({"socket": config.socket, "id": id, "machine_id": machine}),
-        )
-        .unwrap();
+    let fetch = |id: &str, enrollment: &str, capacity: usize| {
+        let reference =
+            serde_json::to_vec(&serde_json::json!({"enrollment": run.join(enrollment), "id": id}))
+                .unwrap();
         let mut output = vec![0xaa; 65536];
         let count = unsafe {
             sudo_relay_fetch_review(
@@ -660,20 +689,14 @@ fn native_receipt_peer(config: &Config) {
         };
         (count, output)
     };
-    for (id, machine, capacity, expected) in [
-        (argument.as_str(), "wrong-machine", 65536, -1),
-        ("unknown-request", config.machine_id.as_str(), 65536, -1),
-        (argument.as_str(), config.machine_id.as_str(), 1, -2),
-    ] {
-        let (count, output) = fetch(id, machine, capacity);
-        assert_eq!(count, expected);
-        assert!(output.iter().all(|byte| *byte == 0xaa));
-    }
-    let (count, output) = fetch(&argument, &config.machine_id, 65536);
-    assert!(count > 0);
-    let pending: PendingView = serde_json::from_slice(&output[..count as usize]).unwrap();
-    assert_eq!(pending.envelope.machine_id, config.machine_id);
     if operation == "native_agent_approve" {
+        let (count, output) = fetch(&argument, "enrollment.json", 65536);
+        assert_eq!(count, -1, "agent must not use approver enrollment");
+        assert!(output.iter().all(|byte| *byte == 0xaa));
+        let value =
+            transport::call_protected(&config.socket, &Request::ExecutionStatus { id: argument })
+                .unwrap();
+        let pending: PendingView = serde_json::from_value(value["pending"].clone()).unwrap();
         assert!(transport::call_protected(
             &config.socket,
             &Request::Approve {
@@ -687,9 +710,38 @@ fn native_receipt_peer(config: &Config) {
         .is_err());
         return;
     }
+    for (id, enrollment, capacity, expected) in [
+        (argument.as_str(), "wrong-machine.json", 65536, -1),
+        (argument.as_str(), "wrong-account.json", 65536, -1),
+        (argument.as_str(), "writable-enrollment.json", 65536, -1),
+        ("unknown-request", "enrollment.json", 65536, -1),
+        (argument.as_str(), "enrollment.json", 1, -2),
+    ] {
+        let (count, output) = fetch(id, enrollment, capacity);
+        assert_eq!(count, expected);
+        assert!(output.iter().all(|byte| *byte == 0xaa));
+    }
+    let (count, output) = fetch(&argument, "enrollment.json", 65536);
+    assert!(count > 0);
+    let fetched: serde_json::Value = serde_json::from_slice(&output[..count as usize]).unwrap();
+    assert_eq!(
+        fetched["enrollment"]["machine_name"],
+        "protected-receipt-fixture"
+    );
+    let envelope: sudo_relay::protocol::Envelope =
+        serde_json::from_value(fetched["review"]["envelope"].clone()).unwrap();
+    let pending = envelope.view().unwrap();
+    assert_eq!(pending.envelope.machine_id, config.machine_id);
+    assert_eq!(pending.envelope.id, argument);
+    let signing_bytes =
+        hex::decode(fetched["review"]["approval_withheld"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        signing_bytes,
+        pending.envelope.approval_payload(false).unwrap()
+    );
     assert_eq!(operation, "native_receipt");
     let key = P256Key::from_slice(&fs::read(run.join("host/host.key")).unwrap()).unwrap();
-    let proof: Signature = key.sign(&pending.envelope.approval_payload(false).unwrap());
+    let proof: Signature = key.sign(&signing_bytes);
     let approval = Request::Approve {
         id: pending.envelope.id.clone(),
         key_id: "native".into(),

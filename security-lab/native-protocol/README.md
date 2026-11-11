@@ -89,10 +89,13 @@ and rollback recovery remain unverified.
 
 ### Protected request retrieval
 
-`BrokerReview(protectedSocket:requestID:pairedMachine:...)` retrieves a request by
-ID through the root-authenticated Unix socket bridge. Socket and machine identity
-must come from trusted enrollment; they are not trusted merely because the caller
-supplied them. The C bridge validates the returned request before returning bytes,
-and the model preserves its existing validation/rendering path. This API cannot
-approve or execute. The interactive lab still uses its explicit fixture mode;
-protected enrollment and native UI connection to this endpoint remain unfinished.
+`BrokerReview(protectedEnrollment:requestID:)` reads the target and display labels
+from a root-protected receipt-lab enrollment record. The caller supplies no command,
+socket, machine pin or account label. The bridge checks the caller's effective UID,
+authenticates the root socket, requires the server's receipt-only marker and
+validates the returned request and decision bytes before the model renders them.
+It never submits approval or falls back to a caller-supplied request.
+
+See [receipt enrollment format](../../docs/native-receipt-enrollment.md). The
+interactive lab still uses its explicit fixture mode; protected key persistence,
+sponsor provenance and interactive use of this enrollment remain unfinished.

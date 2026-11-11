@@ -55,11 +55,12 @@ struct BrokerReview: NativeReviewContent {
         }
     }
 
-    init(protectedSocket: URL, requestID: String, pairedMachine: String, machineName: String,
-         operatingSystem: String, account: String, now: Int64) throws {
-        struct Reference: Encodable { let socket: String; let id: String; let machine_id: String }
-        let reference = try JSONEncoder().encode(Reference(socket: protectedSocket.path, id: requestID, machine_id: pairedMachine))
-        var output = [UInt8](repeating: 0, count: 65536)
+    init(protectedEnrollment: URL, requestID: String) throws {
+        struct Reference: Encodable { let enrollment: String; let id: String }
+        struct Labels: Decodable { let machine_name: String; let operating_system: String; let account: String }
+        struct Fetched: Decodable { let enrollment: Labels; let review: Prepared }
+        let reference = try JSONEncoder().encode(Reference(enrollment: protectedEnrollment.path, id: requestID))
+        var output = [UInt8](repeating: 0, count: 131072)
         let count = reference.withUnsafeBytes { input in
             output.withUnsafeMutableBufferPointer { destination in
                 sudo_relay_fetch_review(input.bindMemory(to: UInt8.self).baseAddress, reference.count,
@@ -67,8 +68,11 @@ struct BrokerReview: NativeReviewContent {
             }
         }
         guard count > 0, count <= output.count else { throw ReviewError.invalidAuthority }
-        try self.init(authenticatedPending: Data(output.prefix(count)), pairedMachine: pairedMachine,
-            machineName: machineName, operatingSystem: operatingSystem, account: account, now: now)
+        let fetched = try JSONDecoder().decode(Fetched.self, from: Data(output.prefix(count)))
+        prepared = fetched.review
+        shared = try Self.decodeHex(prepared.approval_shared)
+        withheld = try Self.decodeHex(prepared.approval_withheld)
+        subtitle = "\(fetched.enrollment.machine_name) · \(fetched.enrollment.operating_system) · \(fetched.enrollment.account)"
     }
 
     init(authenticatedPending: Data, pairedMachine: String, machineName: String,

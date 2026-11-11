@@ -394,3 +394,20 @@ Local Rust tests reject null/malformed/relative/unknown-field reference input wi
 no output; the Swift model rejects an unprotected endpoint without fallback. The
 operation fetches only; no approval submission is available through this API.
 Trusted enrollment of the socket/machine pin and native hardware use remain open.
+
+### Root-owned receipt enrollment record
+
+The root socket fixture now creates a bounded versioned record with its socket,
+machine UUID, approver UID and fixture display labels. Agent UID must fail native
+fetch with that record and leave output untouched. Approver UID must reject a
+wrong-account record, wrong-machine record, writable record, unknown request and
+small output buffer, then accept the protected positive control. Sign the exact
+withheld-output bytes returned by the bridge; root consumption and replay checks
+remain in the same fixture. These new cases await disposable CI.
+
+Local schema tests reject invalid versions, non-receipt mode, root/wrong approver,
+relative sockets, invalid UUIDs, misleading/oversized labels and unknown fields.
+Server responses without a literal boolean receipt-only marker also reject, with
+a valid positive control. These tests do not establish real sponsor identity or
+protection against account-UID reuse. The prior fetch API passed full CI run
+42942654110 before the enrollment-record change.

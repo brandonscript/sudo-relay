@@ -122,8 +122,7 @@ struct Check {
             preconditionFailure("wrong machine accepted")
         } catch ReviewError.invalidRequest { }
         do {
-            _ = try BrokerReview(protectedSocket: root.appendingPathComponent("untrusted.sock"), requestID: "test-reference",
-                pairedMachine: "fixture-machine", machineName: "test-host", operatingSystem: "macOS test", account: "test-user", now: 1700000001)
+            _ = try BrokerReview(protectedEnrollment: root.appendingPathComponent("untrusted-enrollment.json"), requestID: "test-reference")
             preconditionFailure("Unprotected native socket accepted")
         } catch ReviewError.invalidAuthority { }
         try checkPeerPolicyBoundary()

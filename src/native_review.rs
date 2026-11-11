@@ -7,47 +7,95 @@ use sha2::{Digest, Sha256};
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ReviewReference {
-    socket: std::path::PathBuf,
+    enrollment: std::path::PathBuf,
     id: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ReviewEnrollment {
+    version: u8,
+    receipt_only: bool,
     machine_id: String,
+    socket: std::path::PathBuf,
+    approver_uid: u32,
+    machine_name: String,
+    operating_system: String,
+    account: String,
+}
+impl ReviewEnrollment {
+    fn validate(&self, uid: u32) -> Result<()> {
+        ensure!(
+            self.version == 1 && self.receipt_only,
+            "unsupported review enrollment"
+        );
+        ensure!(
+            self.approver_uid != 0 && self.approver_uid == uid,
+            "wrong approving account"
+        );
+        ensure!(
+            self.socket.is_absolute() && uuid::Uuid::parse_str(&self.machine_id).is_ok(),
+            "invalid enrolled target"
+        );
+        for label in [&self.machine_name, &self.operating_system, &self.account] {
+            ensure!(
+                !label.is_empty()
+                    && label.len() <= 100
+                    && label.bytes().all(|b| (32..=126).contains(&b)),
+                "invalid enrolled display label"
+            );
+        }
+        Ok(())
+    }
 }
 
 fn fetch_review(input: &[u8]) -> Result<Vec<u8>> {
     let reference: ReviewReference = serde_json::from_slice(input)?;
     ensure!(
-        reference.socket.is_absolute()
+        reference.enrollment.is_absolute()
             && !reference.id.is_empty()
             && reference.id.len() <= 128
             && reference
                 .id
                 .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
-            && !reference.machine_id.is_empty()
-            && reference.machine_id.len() <= 256,
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_')),
         "invalid review reference"
     );
+    let enrollment: ReviewEnrollment = serde_json::from_slice(
+        &crate::broker::read_protected_file(&reference.enrollment, 4096)?,
+    )?;
+    enrollment.validate(unsafe { libc::geteuid() })?;
     let status = crate::transport::call_protected(
-        &reference.socket,
+        &enrollment.socket,
         &crate::protocol::Request::ExecutionStatus {
             id: reference.id.clone(),
         },
     )?;
+    prepare_fetched_review(&enrollment, &reference.id, &status, crate::broker::now())
+}
+
+fn prepare_fetched_review(
+    enrollment: &ReviewEnrollment,
+    id: &str,
+    status: &serde_json::Value,
+    now: u64,
+) -> Result<Vec<u8>> {
     ensure!(
-        status["id"] == reference.id && status["state"] == "pending",
-        "review is not pending"
+        status["receipt_only"] == true && status["id"] == id && status["state"] == "pending",
+        "review is not a pending receipt-only request"
     );
     let pending = &status["pending"];
-    ensure!(
-        pending["envelope"]["id"] == reference.id,
-        "wrong review reference"
-    );
+    ensure!(pending["envelope"]["id"] == id, "wrong review reference");
     let bytes = serde_json::to_vec(pending)?;
-    prepare(&bytes, &reference.machine_id, crate::broker::now())?;
-    Ok(bytes)
+    let review: serde_json::Value =
+        serde_json::from_slice(&prepare(&bytes, &enrollment.machine_id, now)?)?;
+    Ok(serde_json::to_vec(
+        &serde_json::json!({"enrollment": enrollment, "review": review}),
+    )?)
 }
 
 /// Retrieve and validate a pending request from a root-authenticated local socket.
-/// The socket and machine pin must come from trusted enrollment, not an agent's request.
+/// Root-owned enrollment supplies socket, machine pin, display labels and allowed approver UID.
 /// Returns byte count, -1 on failure, -2 for insufficient capacity; errors write nothing.
 /// This only fetches status: it cannot submit approval or dispatch a command.
 ///
@@ -228,15 +276,83 @@ mod tests {
     use serde_json::{json, Value};
 
     #[test]
+    fn native_enrollment_binds_account_target_labels_and_receipt_mode() {
+        let original = json!({"version":1,"receipt_only":true,"socket":"/run/receipt.sock",
+            "machine_id":"00000000-0000-4000-8000-000000000001","approver_uid":10002,
+            "machine_name":"test-host","operating_system":"macOS test","account":"test-user"});
+        let enrollment: ReviewEnrollment = serde_json::from_value(original.clone()).unwrap();
+        enrollment.validate(10002).unwrap();
+        assert!(enrollment.validate(10001).is_err());
+        for (field, value) in [
+            ("version", json!(2)),
+            ("receipt_only", json!(false)),
+            ("approver_uid", json!(0)),
+            ("socket", json!("relative.sock")),
+            ("machine_id", json!("invalid")),
+            ("machine_name", json!("")),
+            ("operating_system", json!("line\nbreak")),
+            ("account", json!("a".repeat(101))),
+        ] {
+            let mut changed = original.clone();
+            changed[field] = value;
+            assert!(serde_json::from_value::<ReviewEnrollment>(changed)
+                .unwrap()
+                .validate(10002)
+                .is_err());
+        }
+        let mut unknown = original;
+        unknown["allow_fallback"] = json!(true);
+        assert!(serde_json::from_value::<ReviewEnrollment>(unknown).is_err());
+    }
+
+    #[test]
+    fn enrolled_review_requires_receipt_only_server_response() {
+        let mut envelope: Envelope = serde_json::from_value(fixture()["envelope"].clone()).unwrap();
+        envelope.machine_id = "00000000-0000-4000-8000-000000000001".into();
+        let enrollment = ReviewEnrollment {
+            version: 1,
+            receipt_only: true,
+            machine_id: envelope.machine_id.clone(),
+            socket: "/run/test.sock".into(),
+            approver_uid: 10002,
+            machine_name: "test-host".into(),
+            operating_system: "test OS".into(),
+            account: "test-user".into(),
+        };
+        let original = json!({"id":envelope.id,"state":"pending","pending":envelope.view().unwrap(),"receipt_only":true});
+        prepare_fetched_review(&enrollment, &envelope.id, &original, 1700000001).unwrap();
+        for value in [json!(false), json!(null), json!(1), json!("true")] {
+            let mut changed = original.clone();
+            changed["receipt_only"] = value;
+            assert!(
+                prepare_fetched_review(&enrollment, &envelope.id, &changed, 1700000001).is_err()
+            );
+        }
+        let mut missing = original;
+        missing.as_object_mut().unwrap().remove("receipt_only");
+        assert!(prepare_fetched_review(&enrollment, &envelope.id, &missing, 1700000001).is_err());
+    }
+
+    #[test]
     fn native_fetch_rejects_invalid_references_without_output() {
         for input in [
             b"null".as_slice(),
-            br#"{"socket":"relative","id":"request","machine_id":"host"}"#,
-            br#"{"socket":"/missing.sock","id":"","machine_id":"host"}"#,
-            br#"{"socket":"/missing.sock","id":"request","machine_id":"host","command":"injected"}"#,
+            br#"{"enrollment":"relative","id":"request"}"#,
+            br#"{"enrollment":"/missing.json","id":""}"#,
+            br#"{"enrollment":"/missing.json","id":"request","command":"injected"}"#,
         ] {
             let mut output = [0xaa; 32];
-            assert_eq!(unsafe { sudo_relay_fetch_review(input.as_ptr(), input.len(), output.as_mut_ptr(), output.len()) }, -1);
+            assert_eq!(
+                unsafe {
+                    sudo_relay_fetch_review(
+                        input.as_ptr(),
+                        input.len(),
+                        output.as_mut_ptr(),
+                        output.len(),
+                    )
+                },
+                -1
+            );
             assert_eq!(output, [0xaa; 32]);
         }
         let mut output = [0xaa; 32];

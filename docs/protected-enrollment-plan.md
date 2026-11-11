@@ -269,3 +269,16 @@ rejection before a successful read; those new cases await CI. The socket and
 machine pin still require administrator enrollment. This initializer does not
 create that enrollment, persist a signing key or connect the interactive lab UI
 to a root service automatically. No personal-machine root service was installed.
+
+### Root-owned native receipt enrollment
+
+The fetch API now accepts an enrollment-file path and request ID, replacing the
+earlier caller-provided socket/machine parameters. A strict root-protected record
+supplies the target, allowed approver UID and display labels; the server must also
+identify its receipt-only mode. Native rendering consumes the already-validated
+model from that fetch. See [record format and limits](native-receipt-enrollment.md).
+
+Local schema, wrong-mode and negative-endpoint tests pass. The earlier C fetch
+roundtrip passed full CI run 42942654110; new record/UID/writable-file cases await
+CI. This binds review configuration to administrator-owned data but does not
+complete sponsor provenance, signing-key persistence or native deployment.

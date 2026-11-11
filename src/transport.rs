@@ -179,12 +179,18 @@ fn serve_mode(config: Config, development: bool, dispatch: Dispatch) -> Result<(
             Ok(v) => v,
             Err(e) => (Reply::error(format!("{e:#}")), None),
         };
-        let job = match &dispatch {
-            Dispatch::Execute => job,
+        let (reply, job) = match &dispatch {
+            Dispatch::Execute => (reply, job),
             #[cfg(feature = "native-receipt-lab")]
             Dispatch::ReceiptOnly => {
+                let mut reply = reply;
+                if let Reply::Ok { value, .. } = &mut reply {
+                    if let Some(value) = value.as_object_mut() {
+                        value.insert("receipt_only".into(), true.into());
+                    }
+                }
                 drop(job);
-                None
+                (reply, None)
             }
         };
         if let Some(job) = job {
