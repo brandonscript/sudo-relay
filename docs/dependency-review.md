@@ -32,8 +32,8 @@ The earlier scan reported these records for `rmcp` 0.15.0:
 Records can be retrieved at `https://api.osv.dev/v1/vulns/ID`.
 `cargo tree -e features -i rmcp` shows server, macros, base64, transport-async-rw
 and transport-io, without HTTP transport or OAuth features. Both MCP binaries
-use stdio. These specific vulnerable HTTP/OAuth paths are not enabled in the
-current build; this is not a claim that the old SDK has no other vulnerabilities.
+use stdio. These specific vulnerable HTTP/OAuth paths were not enabled in that
+build; this was not a claim that the old SDK had no other vulnerabilities.
 Reevaluate before adding transports.
 
 Updated both stdio servers to `rmcp` 3.9.0 and its current resource/content APIs.
@@ -53,10 +53,17 @@ These checks use the legacy initialize handshake. The SDK also supports newer
 discovery-based negotiation; that route and live desktop-client compatibility
 remain unverified. No installed plugin was refreshed by this dependency change.
 
+## npm advisory check
+
+`npm audit --json` returned zero vulnerabilities for both lockfiles on
+November 10, 2026: `ui` (75 total dependencies reported) and
+`security-lab/approval-host` (64). This checks published npm advisories, not
+source correctness or package provenance.
+
 ## Still unverified
 
-This pass covers Cargo registry package/version advisories only. It does not
-audit source correctness, provenance, native system frameworks, npm dependencies,
+This pass covers Cargo and npm package/version advisories. It does not
+audit source correctness, provenance, native system frameworks,
 CI action supply chains, unpublished flaws or future advisory changes. Repeat
 before release and after dependency changes; do not interpret zero matches as
 proof of safety.

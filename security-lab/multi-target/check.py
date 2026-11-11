@@ -113,6 +113,11 @@ with tempfile.TemporaryDirectory(prefix="sr-target-", dir="/tmp") as scratch, Ex
         tools = client.rpc("tools/list", {})["tools"]
         assert isinstance(tools, list)
         assert sorted(object_value(tool)["name"] for tool in tools) == ["cancel_execution", "execution_status", "request_execution"]
+        listed = client.rpc("resources/list", {})
+        resources = listed["resources"]
+        assert isinstance(resources, list) and len(resources) == 1
+        assert object_value(resources[0])["uri"] == "ui://sudo-relay/approval.html"
+        assert object_value(resources[0])["mimeType"] == "text/html;profile=mcp-app"
         resource = client.rpc("resources/read", {"uri": "ui://sudo-relay/approval.html"})
         assert f"Inert resource fixture: {alias}" in json.dumps(resource)
         assert "resultType" not in resource
