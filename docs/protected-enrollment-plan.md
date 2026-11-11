@@ -122,6 +122,16 @@ UI integration must take this model only from an authenticated verifier, render
 all execution-relevant fields, and retain the same immutable decision bytes
 through review. Do not forward arbitrary caller bytes to the biometric signer.
 
+`BrokerReview` now implements the existing native form's presentation interface.
+It decodes the Rust-validated envelope into immutable Swift fields, displays
+structured arguments or a complete script, names the script interpreter, and
+provides all request details. It retains the exact two decision byte strings and
+checks expiry when selecting the checkbox choice. The automated form fixture
+checks both command kinds, details and expired controls without opening a window.
+The old native lab's thirteen tests still pass. Authenticated production request
+retrieval and separate durable consumption are not connected to this model yet;
+its initializer's name is a caller contract, not an authentication mechanism.
+
 The dependency and its transitive graph are locked. This increment is not a full
 cryptographic dependency audit; upstream advisories and release provenance still
 need the release review already listed in the backlog.

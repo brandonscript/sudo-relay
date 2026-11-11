@@ -51,9 +51,22 @@ public struct ReviewRequest: Codable, Equatable, Sendable {
     }
 }
 
-public struct AuthenticatedReview: Sendable {
+public protocol NativeReviewContent: Sendable {
+    var subtitle: String { get }
+    var commandLabel: String { get }
+    var createdAt: Int64 { get }
+    var expiresAt: Int64 { get }
+    func commandText() -> String
+    func reviewText() throws -> String
+}
+
+public struct AuthenticatedReview: NativeReviewContent {
     public let request: ReviewRequest
     private let requestBytes: Data
+    public var subtitle: String { "\(request.machine) · \(request.operatingSystem) · \(request.account)" }
+    public var createdAt: Int64 { request.createdAt }
+    public var expiresAt: Int64 { request.expiresAt }
+    public var commandLabel: String { "Example command · Not executed" }
 
     public init(bytes: Data, signature: Data, authority: Curve25519.Signing.PublicKey, now: Int64) throws {
         guard bytes.count <= 8192, signature.count == 64 else { throw ReviewError.invalidRequest }
@@ -71,10 +84,7 @@ public struct AuthenticatedReview: Sendable {
     }
 
     public func commandText() -> String {
-        return request.argv.map { argument in
-            argument.unicodeScalars.allSatisfy { CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_@%+=:,./-").contains($0) } && !argument.isEmpty
-                ? argument : "'" + argument.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        }.joined(separator: " ")
+        request.argv.map(quoteReviewArgument).joined(separator: " ")
     }
 
     // All review text comes from the verified model, never from chat-supplied HTML or a digest.
@@ -100,6 +110,12 @@ public struct AuthenticatedReview: Sendable {
         Domain: \(request.domain)
         """
     }
+}
+
+func quoteReviewArgument(_ argument: String) -> String {
+    !argument.isEmpty && argument.unicodeScalars.allSatisfy {
+        CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_@%+=:,./-").contains($0)
+    } ? argument : "'" + argument.replacingOccurrences(of: "'", with: "'\\''") + "'"
 }
 
 private struct ReviewDecision: Codable {

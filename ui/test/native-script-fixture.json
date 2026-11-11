@@ -1,0 +1,27 @@
+{
+  "envelope": {
+    "version": 2,
+    "machine_id": "fixture-machine",
+    "id": "script-fixture",
+    "nonce": "00112233445566778899aabbccddeeff",
+    "created_at": 1700000000,
+    "expires_at": 1700000300,
+    "number": "42",
+    "spec": {
+      "command": {
+        "kind": "script",
+        "interpreter": "/bin/bash",
+        "script": "printf '%s\\n' 'literal café'\n# Receipt fixture; never executed."
+      },
+      "env": {
+        "LANG": "C",
+        "TZ": "UTC"
+      },
+      "reason": "Review the complete script",
+      "timeout_secs": 3600,
+      "output_needed": true
+    }
+  },
+  "signing_payload": "8c757375646f2d72656c61792f726571756573742f76326f666978747572652d6d616368696e656e7363726970742d66697874757265782030303131323233333434353536363737383839396161626263636464656566661a6553f1001a6553f22c6234328366736372697074692f62696e2f6261736878407072696e7466202725735c6e2720276c69746572616c20636166c3a9270a23205265636569707420666978747572653b206e657665722065786563757465642e8282644c414e4761438262545a63555443781a5265766965772074686520636f6d706c65746520736372697074190e10f5",
+  "digest": "2416a53bb3ae80d4afcc4139d0de69cfc6fe23c3711aa139c0505a3dc99984f9"
+}

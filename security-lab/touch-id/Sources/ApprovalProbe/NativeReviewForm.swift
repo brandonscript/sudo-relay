@@ -7,11 +7,11 @@ public final class NativeReviewForm: NSView {
     public let approve = NSButton(title: "Approve with Touch ID", target: nil, action: nil)
     public let deny = NSButton(title: "Deny", target: nil, action: nil)
     public let expiry = NSTextField(labelWithString: "")
-    private let review: AuthenticatedReview
+    private let review: any NativeReviewContent
     private let details: String
     public override var isFlipped: Bool { true }
 
-    public init(review: AuthenticatedReview) throws {
+    public init(review: any NativeReviewContent) throws {
         self.review = review; details = try review.reviewText()
         super.init(frame: NSRect(x: 0, y: 0, width: 580, height: 466))
         let icon = NSImageView(frame: NSRect(x: 24, y: 21, width: 24, height: 24))
@@ -27,12 +27,12 @@ public final class NativeReviewForm: NSView {
         expiry.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
         expiry.setAccessibilityLabel("Approval time remaining")
         addSubview(expiry)
-        label("\(review.request.machine) · \(review.request.operatingSystem) · \(review.request.account)", frame: NSRect(x: 24, y: 77, width: 532, height: 22), muted: true)
+        label(review.subtitle, frame: NSRect(x: 24, y: 77, width: 532, height: 22), muted: true)
         label("What you’re approving", frame: NSRect(x: 24, y: 116, width: 532, height: 22), muted: true)
         let purpose = label("Record one signed test receipt for the command below. Nothing runs.", frame: NSRect(x: 24, y: 144, width: 532, height: 40))
         purpose.font = .systemFont(ofSize: 15)
         purpose.lineBreakMode = .byWordWrapping; purpose.maximumNumberOfLines = 2
-        label("Example command · Not executed", frame: NSRect(x: 24, y: 191, width: 532, height: 22), muted: true)
+        label(review.commandLabel, frame: NSRect(x: 24, y: 191, width: 532, height: 22), muted: true)
         requestText.string = review.commandText()
         requestText.isEditable = false; requestText.isSelectable = true
         requestText.font = .monospacedSystemFont(ofSize: 13, weight: .regular)
@@ -71,17 +71,25 @@ public final class NativeReviewForm: NSView {
     }
 
     public func refresh(now: Int64) {
-        let remaining = max(0, review.request.expiresAt - now)
+        let remaining = max(0, review.expiresAt - now)
         expiry.stringValue = remaining == 0 ? "Approval expired" : "Approve within \(remaining / 60):\(String(format: "%02d", remaining % 60))"
         deny.title = remaining == 0 ? "Close" : "Deny"
-        approve.isEnabled = now >= review.request.createdAt && now < review.request.expiresAt
+        approve.isEnabled = now >= review.createdAt && now < review.expiresAt
         share.isEnabled = approve.isEnabled
     }
 
     @objc private func showDetails() {
         let alert = NSAlert()
         alert.messageText = "Test request details"
-        alert.informativeText = details
+        let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 532, height: 320))
+        text.string = details; text.isEditable = false; text.isSelectable = true
+        text.font = .systemFont(ofSize: 13); text.textColor = .labelColor
+        text.textContainer?.widthTracksTextView = true
+        text.isHorizontallyResizable = false; text.isVerticallyResizable = true
+        text.setAccessibilityLabel("Complete test request details")
+        let scroll = NSScrollView(frame: text.frame)
+        scroll.documentView = text; scroll.hasVerticalScroller = true
+        alert.accessoryView = scroll
         alert.addButton(withTitle: "Back to review")
         alert.runModal()
     }
@@ -91,7 +99,7 @@ public final class NativeReviewForm: NSView {
 public final class NativeReviewPanel: NSPanel, NSWindowDelegate {
     public let form: NativeReviewForm
 
-    public init(review: AuthenticatedReview) throws {
+    public init(review: any NativeReviewContent) throws {
         form = try NativeReviewForm(review: review)
         super.init(contentRect: form.bounds, styleMask: [.titled, .closable], backing: .buffered, defer: false)
         title = "Approval test"; titleVisibility = .hidden
