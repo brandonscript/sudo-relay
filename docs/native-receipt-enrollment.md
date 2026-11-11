@@ -38,4 +38,7 @@ Touch ID app is not automatically connected to this root fixture.
 
 Local schema/negative checks pass. The root CI fixture covers the actual file,
 account and socket boundaries with disposable software keys; the new enrollment
-record cases await their own CI run. No personal-machine root service is installed.
+record cases passed full CI run 42943601838. No personal-machine root service is
+installed. The headless Swift model and software signature passed the separate
+approving-account macOS root job in CI run 42944467261; this does not test a
+protected hardware key or interactive UI.

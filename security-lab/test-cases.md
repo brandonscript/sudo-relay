@@ -423,5 +423,7 @@ replay rejection and no canary file. The agent UID must fail with empty stdout.
 
 This helper uses a deliberately known software fixture key, no AppKit and no
 authenticator. Local compilation, lint and missing-opt-in/missing-enrollment
-negative controls pass; the positive cross-account Swift path awaits CI. It does
+negative controls pass. The positive cross-account Swift path passed the macOS
+root job in CI run 42944467261; the Linux root job also passed. Other jobs were
+still running at this checkpoint. It does
 not establish native window integrity, Touch ID protection or installed identity.

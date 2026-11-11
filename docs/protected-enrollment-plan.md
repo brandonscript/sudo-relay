@@ -279,6 +279,6 @@ identify its receipt-only mode. Native rendering consumes the already-validated
 model from that fetch. See [record format and limits](native-receipt-enrollment.md).
 
 Local schema, wrong-mode and negative-endpoint tests pass. The earlier C fetch
-roundtrip passed full CI run 42942654110; new record/UID/writable-file cases await
-CI. This binds review configuration to administrator-owned data but does not
+roundtrip passed full CI run 42942654110; record/UID/writable-file cases passed
+full CI run 42943601838. This binds review configuration to administrator-owned data but does not
 complete sponsor provenance, signing-key persistence or native deployment.
