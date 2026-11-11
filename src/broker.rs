@@ -342,6 +342,8 @@ impl Broker {
         Self::retire_pending(&tx, id)?;
         tx.execute("INSERT INTO audit(time,id,event,key_id) VALUES(unixepoch(),'','key_pairing_started',?1)", [id])?;
         tx.commit()?;
+        #[cfg(test)]
+        enrollment_tests::checkpoint("pair-denied");
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let mut file = fs::OpenOptions::new()
             .write(true)
@@ -351,12 +353,16 @@ impl Broker {
         file.write_all(encoded.as_bytes())?;
         file.sync_all()?;
         fs::File::open(&keys)?.sync_all()?;
+        #[cfg(test)]
+        enrollment_tests::checkpoint("pair-file-durable");
         Self::retire_pending(&tx, id)?;
         tx.execute("DELETE FROM revoked_keys WHERE id=?1", [id])?;
         tx.execute(
             "INSERT INTO audit(time,id,event,key_id) VALUES(unixepoch(),'','key_paired',?1)",
             [id],
         )?;
+        #[cfg(test)]
+        enrollment_tests::checkpoint("pair-before-commit");
         tx.commit()?;
         Ok(())
     }
@@ -373,6 +379,8 @@ impl Broker {
         )?;
         // Commit denial first: a crash or failed file deletion must leave the key revoked.
         tx.commit()?;
+        #[cfg(test)]
+        enrollment_tests::checkpoint("revoke-denied");
         let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let still_revoked: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM revoked_keys WHERE id=?1)",
@@ -689,6 +697,10 @@ mod acl_tests {
         assert!(reject_extended_acl(&dir.path().join("missing")).is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "broker_enrollment_tests.rs"]
+mod enrollment_tests;
 
 #[cfg(test)]
 mod clock_tests {

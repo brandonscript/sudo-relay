@@ -88,3 +88,11 @@ native enrollment and sponsor revocation remain separate, unfinished boundaries.
 Live broker and receipt-verifier transports re-read time after obtaining the
 approval transaction and again before consumption, so transaction wait time does
 not reuse the entry-time expiry check. Deterministic boundary tests pass locally.
+
+Four ordinary-user process-crash cases now kill pairing/revocation at deterministic
+commit stages, including after denial is cleared in an uncommitted transaction.
+Denial survives each death and broker restart; explicit recovery requires a new
+request. These pass locally and use test-only checkpoints absent from normal
+binaries. The updated protected P-256 rejection regression passed both root jobs
+of CI run 42941088476; its full macOS check job was still running at this checkpoint.
+Actual power-loss, filesystem corruption and snapshot rollback remain untested.

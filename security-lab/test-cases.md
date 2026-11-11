@@ -336,3 +336,24 @@ verification, or moves before creation before consumption. Each produces no job;
 a valid-time positive control still consumes once. Both live transports use the
 current-clock entry point. This checks decision-time validation, not system clock
 rollback prevention, storage stalls after validation, or physical power loss.
+
+### Killed pairing and revocation processes
+
+`killed_enrollment_processes_stay_blocked_until_explicit_recovery` runs as an
+ordinary user with disposable keys and four child processes. Each child stops at
+a test-only checkpoint, then the parent sends SIGKILL and verifies termination:
+
+1. Pairing has committed its denial marker but has not created the key file.
+2. Pairing has synced the new key file but has not enabled it in the ledger.
+3. Pairing has cleared denial inside an uncommitted transaction.
+4. Revocation has committed denial but has not removed the key file.
+
+The original broker stays alive while the child dies, so startup cancellation
+cannot hide an enrollment failure. In each case the old request is cancelled and
+a fresh proof is rejected. Repeat after broker restart, then explicitly revoke
+and pair: only a new request may consume once. Every returned job is dropped.
+
+All four cases pass locally. The pause controls compile only under `cfg(test)`;
+normal broker and receipt-verifier artifacts were checked for their absence.
+These are real process deaths and SQLite recovery checks, not power cuts, storage
+faults, snapshot rollback or protected native-key enrollment tests.

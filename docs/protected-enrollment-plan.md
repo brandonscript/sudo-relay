@@ -230,3 +230,9 @@ This fixes the old-proof re-pairing gap at the broker layer; local receipt-only
 regressions and the native protocol/ledger check pass. Root CI verification of
 the revised P-256 case remains pending. It does not make XPC peer-policy changes
 atomic with consumption, retire already-consumed jobs, or bind sponsor identity.
+
+The revised protected P-256 root case passed Linux and macOS jobs in run
+42941088476. Four local process-kill cases also cover pairing/revocation commit
+stages and explicit recovery without executing a command. This narrows the
+interrupted-enrollment uncertainty; it does not establish protected native key
+persistence, sponsor identity, power-loss durability or anti-rollback protection.
