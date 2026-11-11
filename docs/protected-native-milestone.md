@@ -82,8 +82,10 @@ Enrollment must explicitly create a biometric-current-set Secure Enclave key in
 the authorized reviewer and publish only its public key for administrator pairing.
 This app currently has no enrollment action; provisioning is unfinished. An
 existing test wrapped-key file must not be imported as a shortcut around those
-checks. The final environment choice is pending; nothing has been installed or
-written to the personal Keychain by this milestone.
+checks. The user selected preparation of a narrowly scoped install on this Mac for
+review. The [installation proposal](native-install-review.md) records the footprint
+and unresolved signing gates. Nothing has been installed or written to the
+personal Keychain by this milestone.
 
 Local results for the first integration: Swift 6 warnings-as-errors builds pass
 for the interactive app and headless helper; Rust lint and nine bridge tests pass;
