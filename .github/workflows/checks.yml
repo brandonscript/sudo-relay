@@ -74,15 +74,21 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --locked --features native-receipt-lab --test privileged --no-run --message-format=json > /tmp/privileged-test-build.json
+      - name: Build the headless native reviewer for the disposable account
+        if: runner.os == 'macOS'
+        run: sh security-lab/native-protocol/build-protected-check.sh "$RUNNER_TEMP/native-receipt-check"
       - name: Run only the built root test executable
         run: |
           python3 - <<'PYTEST'
-          import json, subprocess
+          import json, os, subprocess, sys
           executables = []
           for line in open('/tmp/privileged-test-build.json'):
               item = json.loads(line)
               if item.get('executable') and item.get('target', {}).get('name') == 'privileged':
                   executables.append(item['executable'])
           assert len(executables) == 1, executables
-          subprocess.run(['sudo', executables[0], '--ignored', '--test-threads=1'], check=True)
+          command = ['sudo']
+          if sys.platform == 'darwin':
+              command += ['env', 'PE_SWIFT_REVIEW_BINARY=' + os.path.join(os.environ['RUNNER_TEMP'], 'native-receipt-check')]
+          subprocess.run(command + [executables[0], '--ignored', '--test-threads=1'], check=True)
           PYTEST

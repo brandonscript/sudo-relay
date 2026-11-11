@@ -411,3 +411,17 @@ Server responses without a literal boolean receipt-only marker also reject, with
 a valid positive control. These tests do not establish real sponsor identity or
 protection against account-UID reuse. The prior fetch API passed full CI run
 42942654110 before the enrollment-record change.
+
+### Headless Swift reviewer under the protected approving account
+
+Enrollment-record cases passed full CI run 42943601838. The next macOS root
+fixture invokes the actual Swift `BrokerReview` initializer as the separate
+approving UID, with only a protected enrollment path and request ID. Compare its
+rendered command, labels, number and both decision payloads against the broker's
+frozen request. Submit its CryptoKit P-256 signature and require one consumption,
+replay rejection and no canary file. The agent UID must fail with empty stdout.
+
+This helper uses a deliberately known software fixture key, no AppKit and no
+authenticator. Local compilation, lint and missing-opt-in/missing-enrollment
+negative controls pass; the positive cross-account Swift path awaits CI. It does
+not establish native window integrity, Touch ID protection or installed identity.

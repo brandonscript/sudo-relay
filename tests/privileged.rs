@@ -552,6 +552,14 @@ fn protected_receipt_socket_roundtrip(config: &Config) {
     let peer = run.join("peer-probe");
     fs::copy(std::env::current_exe().unwrap(), &peer).unwrap();
     fs::set_permissions(&peer, fs::Permissions::from_mode(0o755)).unwrap();
+    #[cfg(target_os = "macos")]
+    {
+        let source = std::env::var_os("PE_SWIFT_REVIEW_BINARY")
+            .expect("build the headless native reviewer before root CI");
+        let destination = run.join("native-review-check");
+        fs::copy(source, &destination).unwrap();
+        fs::set_permissions(destination, fs::Permissions::from_mode(0o755)).unwrap();
+    }
     let host = run.join("host");
     fs::create_dir(&host).unwrap();
     fs::set_permissions(&host, fs::Permissions::from_mode(0o700)).unwrap();
@@ -634,6 +642,7 @@ fn protected_receipt_socket_roundtrip(config: &Config) {
 
 #[cfg(feature = "native-receipt-lab")]
 fn native_receipt_peer(config: &Config) {
+    #[cfg(not(target_os = "macos"))]
     use p256::ecdsa::{signature::Signer as _, Signature, SigningKey as P256Key};
     let run = config.socket.parent().unwrap();
     let operation = std::env::var("PE_OPERATION").unwrap();
@@ -690,6 +699,18 @@ fn native_receipt_peer(config: &Config) {
         (count, output)
     };
     if operation == "native_agent_approve" {
+        #[cfg(target_os = "macos")]
+        {
+            let rejected = Process::new(run.join("native-review-check"))
+                .arg(run.join("enrollment.json"))
+                .arg(&argument)
+                .env("PE_NATIVE_RECEIPT_CHECK", "1")
+                .output()
+                .unwrap();
+            assert!(!rejected.status.success());
+            assert!(rejected.stdout.is_empty());
+        }
+
         let (count, output) = fetch(&argument, "enrollment.json", 65536);
         assert_eq!(count, -1, "agent must not use approver enrollment");
         assert!(output.iter().all(|byte| *byte == 0xaa));
@@ -740,14 +761,49 @@ fn native_receipt_peer(config: &Config) {
         pending.envelope.approval_payload(false).unwrap()
     );
     assert_eq!(operation, "native_receipt");
-    let key = P256Key::from_slice(&fs::read(run.join("host/host.key")).unwrap()).unwrap();
-    let proof: Signature = key.sign(&signing_bytes);
+    #[cfg(not(target_os = "macos"))]
+    let proof = {
+        let key = P256Key::from_slice(&fs::read(run.join("host/host.key")).unwrap()).unwrap();
+        let signature: Signature = key.sign(&signing_bytes);
+        signature.to_der().as_bytes().to_vec()
+    };
+    #[cfg(target_os = "macos")]
+    let proof = {
+        let result = Process::new(run.join("native-review-check"))
+            .arg(run.join("enrollment.json"))
+            .arg(&argument)
+            .env("PE_NATIVE_RECEIPT_CHECK", "1")
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let native: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(native["id"], pending.envelope.id);
+        assert_eq!(native["number"], pending.envelope.number);
+        assert_eq!(
+            native["subtitle"],
+            "protected-receipt-fixture · Disposable OS fixture · test-user"
+        );
+        assert_eq!(
+            native["command"],
+            format!("/usr/bin/touch {}", run.join("must-not-exist").display())
+        );
+        assert_eq!(native["withheld"], hex::encode(&signing_bytes));
+        assert_eq!(
+            native["shared"],
+            hex::encode(pending.envelope.approval_payload(true).unwrap())
+        );
+        hex::decode(native["signature"].as_str().unwrap()).unwrap()
+    };
     let approval = Request::Approve {
         id: pending.envelope.id.clone(),
         key_id: "native".into(),
         number: pending.envelope.number,
         share_output: false,
-        signature: hex::encode(proof.to_der()),
+        signature: hex::encode(proof),
     };
     let value = transport::call_protected(&config.socket, &approval).unwrap();
     assert_eq!(value["state"], "consumed");

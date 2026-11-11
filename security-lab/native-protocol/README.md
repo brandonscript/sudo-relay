@@ -99,3 +99,9 @@ It never submits approval or falls back to a caller-supplied request.
 See [receipt enrollment format](../../docs/native-receipt-enrollment.md). The
 interactive lab still uses its explicit fixture mode; protected key persistence,
 sponsor provenance and interactive use of this enrollment remain unfinished.
+
+The disposable macOS root CI fixture also builds `ProtectedReviewCheck.swift`
+with `build-protected-check.sh OUTPUT`. It runs the protected Swift model under
+the approving account and signs with a known software fixture key. This is a
+headless receipt check, not a production signer: no UI, Touch ID or command runs.
+The helper requires `PE_NATIVE_RECEIPT_CHECK=1` and fixture-specific labels.
