@@ -17,6 +17,11 @@ final class ReceiptService: NSObject, NSXPCListenerDelegate, PeerReceiptProtocol
         } else { verifier = nil }
     }
 
+    func cancel(reply: @escaping @Sendable () -> Void) {
+        verifier?.deny()
+        reply()
+    }
+
     func review(reply: @escaping @Sendable (Data?, Data?, Data?) -> Void) {
         guard let packet = try? verifier?.issue() else { reply(nil, nil, nil); return }
         reply(packet.bytes, packet.signature, packet.authority.rawRepresentation)
@@ -63,7 +68,7 @@ struct Service {
         let delegate = try ReceiptService(policy: PeerPolicy.load(from: root), root: root)
         let listener = NSXPCListener.service()
         listener.delegate = delegate
-        DispatchQueue.global().asyncAfter(deadline: .now() + 15) { exit(2) }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 360) { exit(2) }
         withExtendedLifetime(delegate) { listener.resume() }
     }
 }

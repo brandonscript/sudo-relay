@@ -12,11 +12,11 @@ python3 security-lab/xpc-peer/check.py
 
 The harness builds two small processes into temporary app/XPC bundles, signs
 them ad hoc with the hardened-runtime option, pins their exact code-directory
-hashes, and runs seven cases. The signed-review case creates disposable software keys
+hashes, and runs eight cases. The signed-review case creates disposable software keys
 in the temporary fixture directory. It uses no signing certificate, password,
 biometric prompt, network listener, sudo/PAM change or installed service.
 macOS launches the bundled helper on demand. Helpers exit on disconnection or
-after 15 seconds; each client has a ten-second deadline and the harness has
+after six minutes (allowing a five-minute native review); each client has a ten-second deadline and the harness has
 bounded subprocess timeouts. Temporary bundles and receipts are removed at exit.
 
 The development sandbox prevented the initial positive control from running;
@@ -27,7 +27,7 @@ crash or failed positive control is an error, never a security pass.
 
 November 10, 2026, local macOS 27.2, Swift 6.4.2: all six expected outcomes were
 observed. The direct-call case is an intentionally unsafe pattern, not a protective pass.
-The seventh, signed-review case also passed locally; its hosted CI result is not yet recorded.
+The seventh, signed-review case passed locally and in the complete [CI run for `87dfece`](https://github.com/brandonscript/sudo-relay/actions/runs/42928675258). The eighth, cancellation case passed locally; its hosted result is not yet recorded.
 
 The six-case XPC step also passed on the GitHub macOS runner for `ec459d5`;
 the complete [CI run](https://github.com/brandonscript/sudo-relay/actions/runs/42927110278)
@@ -42,6 +42,7 @@ succeeded. Hosted-runner results are separate from local hardware/UI checks.
 | Same changed service, original identity still pinned | Reply rejected during handshake; zero receipts (`NSCocoaErrorDomain 4102`). |
 | Changed service, original pin, consequential call sent before handshake | Client rejects the reply **after one remote receipt was created** (`4102`). Known unsafe sequence. |
 | Signed review after authenticated handshake | Altered output choice rejected, valid proof accepted once, replay rejected. |
+| Cancel before submitting a valid signed decision | Zero receipts; proof rejected. |
 
 Variants retain the same account and bundle identifier; a changed sealed resource
 and fresh ad-hoc signature produce a different code identity. Bundle signatures
@@ -102,11 +103,41 @@ single-build experiment, not a settled update/rollback policy.
 There is no human request review, Touch ID/passkey proof, durable approval ledger,
 cross-user isolation, trusted installation or broker integration here. Calling an
 allowed executable is not proof that a human approved anything. The existing
-native UI/Touch ID lab remains a separate same-process experiment. The software-key
-case reuses its verifier but does not connect its UI or hardware signer.
+standalone native lab remains available. The new manual native client connects its
+UI and hardware signer across XPC; its human trial is tracked separately below.
 
 Next: define protected enrollment and update policy, then connect the existing
 authenticated review and biometric signing flow to a separate receipt verifier.
 Keep the first call read-only, authenticate both peers, bind the complete request
 and output choice, and test disconnect/restart/replay before any privileged use.
 Linux requires a separately evaluated mechanism; these are macOS-specific tests.
+
+## Native reviewer trial
+
+`python3 security-lab/xpc-peer/check.py --prepare-native` also prepares a temporary
+`sudo-relay lab.app`, using the existing shield icon and native review form. It
+prints the app path but does not launch it. The ordinary automated run compiles
+this client without invoking biometrics. The manual app runs these steps:
+
+1. Check Touch ID capability and create an ephemeral biometric-protected key.
+   Its encrypted representation stays in memory. Write only its public key into
+   the disposable fixture enrollment file before starting the service.
+2. Authenticate the XPC service with the harmless handshake, then retrieve and
+   verify the service's frozen request. The service pins the native client's
+   exact code hash before accepting messages.
+3. Show the existing review. Freeze output sharing into the decision, require
+   fresh Touch ID, and send the proof to the separate verifier. No fallback.
+4. Close quietly after acceptance, denial, expiry or fingerprint cancellation.
+   A disconnect reports an unconfirmed outcome; it never retries signing or
+   submission. Unexpected failures remain visible.
+
+Manual checks still required for this new path: successful approval, denial,
+fingerprint cancellation, expiry while authentication is open, and disconnects
+before/after submission. Prior same-process hardware trials do not prove this
+integration. The initial separate-process hardware trial is pending.
+
+This enrollment is deliberately self-created by the fixture, not administrator
+protected. Both processes and the public-key/policy files are agent-writable.
+No durable ledger or production key exists. A new launch creates a new enrollment;
+this is unsuitable for production restart/recovery. The prepared app directory
+is retained for the manual run; remove that exact temporary directory afterward.

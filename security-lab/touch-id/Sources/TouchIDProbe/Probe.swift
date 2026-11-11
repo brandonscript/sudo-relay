@@ -5,19 +5,12 @@ import LocalAuthentication
 import Security
 
 enum ProbeError: Error {
-    case unavailable, noninteractiveSigningSucceeded, invalidSignature, invalidAccessControl
+    case unavailable, invalidSignature
 }
 
 @main
 @MainActor
 struct Probe {
-    static func context() -> LAContext {
-        let context = LAContext()
-        context.touchIDAuthenticationAllowableReuseDuration = 0
-        context.localizedFallbackTitle = ""
-        return context
-    }
-
     static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())
         guard arguments == ["--check"] || arguments == ["--run"] || arguments == ["--review-boundary"] else {
@@ -25,7 +18,7 @@ struct Probe {
             exit(2)
         }
         guard getuid() != 0 else { print("Run as an ordinary user."); exit(2) }
-        let capability = context()
+        let capability = BiometricSigning.context()
         var error: NSError?
         let available = capability.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
         let touchID = capability.biometryType == .touchID
@@ -73,10 +66,10 @@ struct Probe {
                 print("Review cancelled: no further requests; nothing executed.")
                 return
             }
-            if keyData == nil { keyData = try makeBiometricKey() }
+            if keyData == nil { keyData = try BiometricSigning.makeBiometricKey() }
             guard let keyData else { throw ProbeError.unavailable }
-            let signature = try signWithBiometrics(bytes, keyData: keyData, reason: "Sign sudo-relay harmless test \(sequence) of 2")
-            let lookup = context()
+            let signature = try BiometricSigning.signWithBiometrics(bytes, keyData: keyData, reason: "Sign sudo-relay harmless test \(sequence) of 2")
+            let lookup = BiometricSigning.context()
             lookup.interactionNotAllowed = true
             defer { lookup.invalidate() }
             let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: keyData, authenticationContext: lookup)

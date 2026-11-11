@@ -12,6 +12,7 @@ import sys
 import tempfile
 
 SOURCE = Path(__file__).resolve().parent
+assert sys.argv[1:] in ([], ["--prepare-native"]), "Use --prepare-native to retain a manual-test app"
 assert sys.platform == "darwin" and os.getuid() != 0, "Run as an ordinary macOS user"
 
 
@@ -67,11 +68,16 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
             info["XPCService"] = {"ServiceType": "Application"}
         write_plist(bundle / "Contents/Info.plist", info)
         sign(bundle)
+    native_binary = root / "NativeClient"
+    approval_sources = sorted((SOURCE.parent / "touch-id/Sources/ApprovalProbe").glob("*.swift"))
+    run("/usr/bin/xcrun", "swiftc", "-swift-version", "6", "-parse-as-library", "-warnings-as-errors",
+        "-module-cache-path", str(root / "modules"), str(SOURCE / "Shared.swift"),
+        *(str(path) for path in approval_sources), str(SOURCE / "NativeClient.swift"), "-o", str(native_binary))
     original_client = cdhash(original)
     original_service = cdhash(helper)
     results: list[dict[str, object]] = []
     for case in ["allowed", "variant-client-allowed", "substituted-client", "variant-service-allowed",
-                 "substituted-service", "substituted-service-without-handshake", "signed-review"]:
+                 "substituted-service", "substituted-service-without-handshake", "signed-review", "signed-denied"]:
         case_root = root / case
         app = case_root / "PeerLab.app"
         shutil.copytree(original, app)
@@ -94,16 +100,17 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
         }))
         characterization = case.endswith("without-handshake")
         arguments = ["--characterize-without-handshake"] if characterization else []
-        if case == "signed-review":
+        if case in ["signed-review", "signed-denied"]:
             run(str(app / "Contents/MacOS/Client"), "--fixture-key")
-            arguments = ["--signed-review"]
+            arguments = [f"--{case}"]
         result = subprocess.run([str(app / "Contents/MacOS/Client"), *arguments], text=True,
                                 capture_output=True, timeout=15)
         events = [json.loads(line) for line in result.stdout.splitlines()]
         receipt = case_root / "receipt.txt"
-        if case == "signed-review":
+        if case in ["signed-review", "signed-denied"]:
+            expected = "signed-review-one-receipt-alteration-and-replay-rejected" if case == "signed-review" else "signed-review-denied-zero-receipts"
             assert result.returncode == 0 and events == [{"event": "peer-verified"},
-                {"event": "signed-review-one-receipt-alteration-and-replay-rejected"}], (case, result)
+                {"event": expected}], (case, result)
             assert not receipt.exists()
         elif case.endswith("allowed"):
             assert result.returncode == 0 and events == [{"event": "peer-verified"}, {"event": "receipt-received"}], (case, result)
@@ -115,5 +122,19 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
             assert receipt.exists() == characterization, f"{case}: unexpected receipt state"
         results.append({"case": case, "expectation_met": True, "known_unsafe_pattern": characterization,
                         "receipt_count": 1 if case == "signed-review" else int(receipt.exists()), "events": events})
-    print(json.dumps({"cases": results, "uid": os.getuid(), "commands_executed": 0,
+    native_app: str | None = None
+    if sys.argv[1:] == ["--prepare-native"]:
+        packaged = run("/usr/bin/xcrun", "swift", "-module-cache-path", str(root / "modules"),
+                       str(SOURCE.parent / "touch-id/package-lab.swift"), str(native_binary))
+        app = Path(packaged.stdout.strip())
+        assert app.is_dir() and app.name == "sudo-relay lab.app"
+        shutil.copytree(helper, app / helper_relative)
+        sign(app)
+        run("/usr/bin/codesign", "--verify", "--deep", "--strict", str(app))
+        (app.parent / "policy.json").write_text(json.dumps({
+            "client": f'identifier "local.sudo-relay.receipt-lab" and cdhash H"{cdhash(app)}"',
+            "service": f'identifier "local.sudo-relay.peer-service" and cdhash H"{cdhash(app / helper_relative)}"',
+        }))
+        native_app = str(app)
+    print(json.dumps({"cases": results, "prepared_native_app": native_app, "uid": os.getuid(), "commands_executed": 0,
                       "human_approval_tested": False, "protected_deployment_tested": False}, indent=2))

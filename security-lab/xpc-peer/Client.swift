@@ -13,7 +13,7 @@ struct Client {
             try key.publicKey.rawRepresentation.write(to: root.appendingPathComponent("fixture-public.key"))
             return
         }
-        guard arguments.isEmpty || arguments == ["--characterize-without-handshake"] || arguments == ["--signed-review"] else { exit(2) }
+        guard arguments.isEmpty || arguments == ["--characterize-without-handshake"] || arguments == ["--signed-review"] || arguments == ["--signed-denied"] else { exit(2) }
         let policy = try PeerPolicy.load(from: root)
         let connection = NSXPCConnection(serviceName: "local.sudo-relay.peer-service")
         connection.remoteObjectInterface = NSXPCInterface(with: PeerReceiptProtocol.self)
@@ -35,7 +35,9 @@ struct Client {
             proxy.hello { response in
                 guard response == "peer-check-hello" else { report("invalid-hello"); exit(2) }
                 report("peer-verified")
-                if arguments == ["--signed-review"] { checkSignedReview(proxy, root: root) }
+                if arguments == ["--signed-review"] || arguments == ["--signed-denied"] {
+                    checkSignedReview(proxy, root: root, denied: arguments == ["--signed-denied"])
+                }
                 else { sendReceipt() }
             }
         } else {
@@ -49,7 +51,7 @@ struct Client {
     }
 }
 
-func checkSignedReview(_ proxy: any PeerReceiptProtocol, root: URL) {
+func checkSignedReview(_ proxy: any PeerReceiptProtocol, root: URL, denied: Bool) {
     proxy.review { bytes, signature, authority in
         do {
             guard let bytes, let signature, let authority else { report("missing-review"); exit(2) }
@@ -60,6 +62,15 @@ func checkSignedReview(_ proxy: any PeerReceiptProtocol, root: URL) {
             let key = try P256.Signing.PrivateKey(rawRepresentation: Data(contentsOf: root.appendingPathComponent("fixture-private.key")))
             let decision = try review.decision(shareOutput: false, now: Int64(Date().timeIntervalSince1970))
             let proof = try key.signature(for: decision).derRepresentation
+            if denied {
+                proxy.cancel {
+                    proxy.submit(decision, signature: proof) { accepted in
+                        guard !accepted else { report("denied-decision-accepted"); exit(2) }
+                        report("signed-review-denied-zero-receipts"); exit(0)
+                    }
+                }
+                return
+            }
             let altered = try review.decision(shareOutput: true, now: Int64(Date().timeIntervalSince1970))
             proxy.submit(altered, signature: proof) { accepted in
                 guard !accepted else { report("altered-decision-accepted"); exit(2) }
