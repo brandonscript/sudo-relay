@@ -112,6 +112,10 @@ Add this local MCP server to your chat client, replacing both paths with absolut
 }
 ```
 
+For several local instances, use a separate named connection and socket for each.
+The [multiple-target guide](docs/multiple-targets.md) describes configuration,
+renaming and offline behavior; remote approval integration is still unfinished.
+
 Ask it to request `/usr/bin/printf` with `hello` as a separate argument. This creates a pending request; it does not run it. The tool result contains the request ID and complete approval envelope.
 
 Start the reference host from `ui`:

@@ -538,3 +538,18 @@ path still needs separate user-facing outcome handling.
 Full native submission CI run 42946565284 passed.
 The updated native client also compiles and passes all nineteen XPC regression
 cases without opening a dialog or requesting authentication.
+
+### Four real MCP instances with inert backends
+
+`security-lab/multi-target/check.py` starts four stdio MCP processes together,
+each with a different local Unix backend and resource body. It checks the three
+model-facing tools, per-instance resources and request destinations, identical
+request IDs on all backends, cancellation isolation, and an offline target that
+cannot fall back to another. All remaining targets must stay pending and
+reachable. Local checks pass; Linux/macOS CI now runs the same fixture.
+
+The backends deliberately contain no signing or execution code. They test MCP
+connection routing, not broker authorization or protected target display. Real
+chat-client naming/resource isolation, four remote machines and native handoff
+remain unverified. The prior socket-loss/native-message increment passed full
+CI run 42947279181.

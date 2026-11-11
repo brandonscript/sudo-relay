@@ -62,6 +62,11 @@ jobs:
       - run: cargo build --locked --features host-probe --bin mcp-host-probe
       - run: python3 security-lab/mcp-host-probe/check.py
       - run: python3 security-lab/mcp-host-probe/package.py
+      - name: Check four isolated MCP target connections without execution
+        timeout-minutes: 2
+        run: |
+          cargo build --locked --bin mcp-server
+          python3 security-lab/multi-target/check.py
       - run: node --import ./ui/node_modules/tsx/dist/loader.mjs scripts/integration.mts --boundary-only
       - run: node --import ./ui/node_modules/tsx/dist/loader.mjs scripts/integration.mts
   privileged:
