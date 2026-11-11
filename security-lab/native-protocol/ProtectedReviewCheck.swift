@@ -12,6 +12,7 @@ struct ProtectedReviewCheck {
         let shared: String
         let withheld: String
         let signature: String
+        let consumed: Bool
     }
 
     static func main() {
@@ -36,8 +37,17 @@ struct ProtectedReviewCheck {
         let key = try P256.Signing.PrivateKey(rawRepresentation: keyBytes)
         try review.verifySigningKey(key.publicKey)
         let signature = try key.signature(for: withheld).derRepresentation
+        do {
+            try review.submitReceipt(signature: signature, shareOutput: true)
+            throw ReviewError.invalidRequest
+        } catch ReviewError.invalidProof { }
+        try review.submitReceipt(signature: signature, shareOutput: false)
+        do {
+            try review.submitReceipt(signature: signature, shareOutput: false)
+            throw ReviewError.invalidRequest
+        } catch ReviewError.invalidProof { }
         let result = Result(id: review.requestID, number: review.confirmationNumber,
-            subtitle: review.subtitle, command: review.commandText(), shared: hex(shared), withheld: hex(withheld), signature: hex(signature))
+            subtitle: review.subtitle, command: review.commandText(), shared: hex(shared), withheld: hex(withheld), signature: hex(signature), consumed: true)
         FileHandle.standardOutput.write(try JSONEncoder().encode(result))
     }
 

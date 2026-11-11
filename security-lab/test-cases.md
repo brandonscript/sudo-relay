@@ -480,3 +480,22 @@ receipt signature once and rejects replay. Dedicated receipt verification must
 return no execution job. These root cases await disposable CI. Local negative
 cases, native bridge checks and lint in both feature configurations pass.
 The preceding restart-preparation increment passed full CI run 42945677976.
+
+### Native protected receipt submission
+
+The headless Swift fixture now fetches, checks the key, signs, and submits through
+the native C bridge as the approving UID. Altered output-sharing must fail before
+the valid signature consumes once; replay must fail. Wrong enrolled key ID must
+fail and leave the same request available for the valid control. Linux exercises
+the same C submission operation using its software signer. Root status must stay
+consumed, with no outcome and no canary file. These positive cases await CI.
+
+Local tests reject null/oversized/malformed references and injected fields. The
+Swift unprotected constructor cannot submit. Signature verification uses freshly
+loaded protected enrollment and the current frozen request, then the independent
+broker verifies again. A lost acknowledgement is unconfirmed, not permission to
+retry. Dropped-reply coverage of this specific bridge remains open.
+
+The receipt-domain separation increment passed full CI run 42946166927. For
+native submission, eight local bridge tests, the Swift protocol checks/build and
+strict lint with and without lab features pass. No local root service was run.

@@ -41,6 +41,7 @@ struct BrokerReview: NativeReviewContent {
         }
     }
 
+    private let protectedEnrollment: URL?
     private let enrolledSigningKey: Data?
     private let prepared: Prepared
     private let shared: Data
@@ -58,6 +59,7 @@ struct BrokerReview: NativeReviewContent {
     }
 
     init(protectedEnrollment: URL, requestID: String) throws {
+        self.protectedEnrollment = protectedEnrollment
         struct Reference: Encodable { let enrollment: String; let id: String }
         struct Labels: Decodable { let machine_name: String; let operating_system: String; let account: String; let signing_key: String }
         struct Fetched: Decodable { let enrollment: Labels; let review: Prepared }
@@ -97,6 +99,7 @@ struct BrokerReview: NativeReviewContent {
             }
         }
         guard count > 0, count <= output.count else { throw ReviewError.invalidRequest }
+        protectedEnrollment = nil
         enrolledSigningKey = nil
         prepared = try JSONDecoder().decode(Prepared.self, from: Data(output.prefix(count)))
         shared = try Self.decodeHex(prepared.approval_shared)
@@ -109,6 +112,20 @@ struct BrokerReview: NativeReviewContent {
         guard let enrolledSigningKey, enrolledSigningKey == publicKey.x963Representation else {
             throw ReviewError.invalidAuthority
         }
+    }
+
+    /// A failure may follow consumption with a lost reply. The caller must not retry automatically.
+    func submitReceipt(signature: Data, shareOutput: Bool) throws {
+        guard let protectedEnrollment, signature.count <= 72 else { throw ReviewError.invalidAuthority }
+        struct Submission: Encodable {
+            let enrollment: String; let id: String; let signature: String; let share_output: Bool
+        }
+        let bytes = try JSONEncoder().encode(Submission(enrollment: protectedEnrollment.path, id: requestID,
+            signature: signature.map { String(format: "%02x", $0) }.joined(), share_output: shareOutput))
+        let result = bytes.withUnsafeBytes { input in
+            sudo_relay_submit_receipt(input.bindMemory(to: UInt8.self).baseAddress, bytes.count)
+        }
+        guard result == 1 else { throw ReviewError.invalidProof }
     }
 
     func decision(shareOutput: Bool, now: Int64) throws -> Data {

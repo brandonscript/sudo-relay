@@ -575,12 +575,18 @@ fn protected_receipt_socket_roundtrip(config: &Config) {
     }
     let signing_key = p256::ecdsa::SigningKey::from_slice(&[27; 32]).unwrap();
     let other_key = p256::ecdsa::SigningKey::from_slice(&[28; 32]).unwrap();
-    let enrollment = serde_json::json!({"version": 1, "receipt_only": true,
+    let enrollment = serde_json::json!({"version": 1, "receipt_only": true, "signing_key_id": "native",
         "signing_key": format!("p256-sha256:{}", hex::encode(signing_key.verifying_key().to_sec1_point(false).as_bytes())),
         "machine_id": config.machine_id, "socket": config.socket, "approver_uid": config.approver_uid,
         "machine_name": "protected-receipt-fixture", "operating_system": "Disposable OS fixture", "account": "test-user"});
     for (name, field, value, mode) in [
         ("enrollment.json", "version", serde_json::json!(1), 0o644),
+        (
+            "wrong-key-id.json",
+            "signing_key_id",
+            serde_json::json!("unpaired"),
+            0o644,
+        ),
         (
             "wrong-key.json",
             "signing_key",
@@ -694,6 +700,7 @@ fn native_receipt_peer(config: &Config) {
     }
     // Retrieve the frozen request directly from the root peer, never from agent-supplied display data.
     unsafe extern "C" {
+        fn sudo_relay_submit_receipt(input: *const u8, input_len: usize) -> i32;
         fn sudo_relay_fetch_review(
             input: *const u8,
             input_len: usize,
@@ -780,54 +787,6 @@ fn native_receipt_peer(config: &Config) {
         pending.envelope.receipt_approval_payload(false).unwrap()
     );
     assert_eq!(operation, "native_receipt");
-    #[cfg(not(target_os = "macos"))]
-    let proof = {
-        let key = P256Key::from_slice(&fs::read(run.join("host/host.key")).unwrap()).unwrap();
-        let signature: Signature = key.sign(&signing_bytes);
-        signature.to_der().as_bytes().to_vec()
-    };
-    #[cfg(target_os = "macos")]
-    let proof = {
-        let rejected = Process::new(run.join("native-review-check"))
-            .arg(run.join("wrong-key.json"))
-            .arg(&argument)
-            .env("PE_NATIVE_RECEIPT_CHECK", "1")
-            .output()
-            .unwrap();
-        assert!(
-            !rejected.status.success(),
-            "wrong enrolled signing key accepted"
-        );
-        assert!(rejected.stdout.is_empty());
-        let result = Process::new(run.join("native-review-check"))
-            .arg(run.join("enrollment.json"))
-            .arg(&argument)
-            .env("PE_NATIVE_RECEIPT_CHECK", "1")
-            .output()
-            .unwrap();
-        assert!(
-            result.status.success(),
-            "{}",
-            String::from_utf8_lossy(&result.stderr)
-        );
-        let native: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-        assert_eq!(native["id"], pending.envelope.id);
-        assert_eq!(native["number"], pending.envelope.number);
-        assert_eq!(
-            native["subtitle"],
-            "protected-receipt-fixture · Disposable OS fixture · test-user"
-        );
-        assert_eq!(
-            native["command"],
-            format!("/usr/bin/touch {}", run.join("must-not-exist").display())
-        );
-        assert_eq!(native["withheld"], hex::encode(&signing_bytes));
-        assert_eq!(
-            native["shared"],
-            hex::encode(pending.envelope.receipt_approval_payload(true).unwrap())
-        );
-        hex::decode(native["signature"].as_str().unwrap()).unwrap()
-    };
     // The same key's execution-domain signature must not authorize a receipt.
     let execution_signature = {
         use p256::ecdsa::{signature::Signer, Signature, SigningKey};
@@ -846,16 +805,71 @@ fn native_receipt_peer(config: &Config) {
         }
     )
     .is_err());
-    let approval = Request::ApproveReceipt {
-        id: pending.envelope.id.clone(),
-        key_id: "native".into(),
-        number: pending.envelope.number,
-        share_output: false,
-        signature: hex::encode(proof),
+    #[cfg(not(target_os = "macos"))]
+    let proof = {
+        let key = P256Key::from_slice(&fs::read(run.join("host/host.key")).unwrap()).unwrap();
+        let signature: Signature = key.sign(&signing_bytes);
+        signature.to_der().as_bytes().to_vec()
     };
-    let value = transport::call_protected(&config.socket, &approval).unwrap();
-    assert_eq!(value["state"], "consumed");
-    assert!(transport::call_protected(&config.socket, &approval).is_err());
+    #[cfg(target_os = "macos")]
+    let proof = {
+        for record in ["wrong-key.json", "wrong-key-id.json"] {
+            let rejected = Process::new(run.join("native-review-check"))
+                .arg(run.join(record))
+                .arg(&argument)
+                .env("PE_NATIVE_RECEIPT_CHECK", "1")
+                .output()
+                .unwrap();
+            assert!(
+                !rejected.status.success(),
+                "wrong enrolled signing key accepted"
+            );
+            assert!(rejected.stdout.is_empty());
+        }
+        let result = Process::new(run.join("native-review-check"))
+            .arg(run.join("enrollment.json"))
+            .arg(&argument)
+            .env("PE_NATIVE_RECEIPT_CHECK", "1")
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let native: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(native["consumed"], true);
+        assert_eq!(native["id"], pending.envelope.id);
+        assert_eq!(native["number"], pending.envelope.number);
+        assert_eq!(
+            native["subtitle"],
+            "protected-receipt-fixture · Disposable OS fixture · test-user"
+        );
+        assert_eq!(
+            native["command"],
+            format!("/usr/bin/touch {}", run.join("must-not-exist").display())
+        );
+        assert_eq!(native["withheld"], hex::encode(&signing_bytes));
+        assert_eq!(
+            native["shared"],
+            hex::encode(pending.envelope.receipt_approval_payload(true).unwrap())
+        );
+        hex::decode(native["signature"].as_str().unwrap()).unwrap()
+    };
+    let submit = |share_output| {
+        let input = serde_json::to_vec(&serde_json::json!({
+            "enrollment": run.join("enrollment.json"), "id": pending.envelope.id,
+            "signature": hex::encode(&proof), "share_output": share_output,
+        }))
+        .unwrap();
+        unsafe { sudo_relay_submit_receipt(input.as_ptr(), input.len()) }
+    };
+    #[cfg(not(target_os = "macos"))]
+    {
+        assert_eq!(submit(true), -1, "altered sharing accepted");
+        assert_eq!(submit(false), 1);
+    }
+    assert_eq!(submit(false), -1, "replayed native submission accepted");
     let status = transport::call_protected(
         &config.socket,
         &Request::ExecutionStatus {

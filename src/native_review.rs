@@ -20,6 +20,7 @@ struct ReviewEnrollment {
     socket: std::path::PathBuf,
     approver_uid: u32,
     signing_key: String,
+    signing_key_id: String,
     machine_name: String,
     operating_system: String,
     account: String,
@@ -45,6 +46,7 @@ impl ReviewEnrollment {
             ),
             "native receipt enrollment requires P-256"
         );
+        crate::broker::validate_key_id(&self.signing_key_id)?;
         for label in [&self.machine_name, &self.operating_system, &self.account] {
             ensure!(
                 !label.is_empty()
@@ -57,8 +59,7 @@ impl ReviewEnrollment {
     }
 }
 
-fn fetch_review(input: &[u8]) -> Result<Vec<u8>> {
-    let reference: ReviewReference = serde_json::from_slice(input)?;
+fn load_enrollment(reference: &ReviewReference) -> Result<ReviewEnrollment> {
     ensure!(
         reference.enrollment.is_absolute()
             && !reference.id.is_empty()
@@ -73,6 +74,12 @@ fn fetch_review(input: &[u8]) -> Result<Vec<u8>> {
         &crate::broker::read_protected_file(&reference.enrollment, 4096)?,
     )?;
     enrollment.validate(unsafe { libc::geteuid() })?;
+    Ok(enrollment)
+}
+
+fn fetch_review(input: &[u8]) -> Result<Vec<u8>> {
+    let reference: ReviewReference = serde_json::from_slice(input)?;
+    let enrollment = load_enrollment(&reference)?;
     let status = crate::transport::call_protected(
         &enrollment.socket,
         &crate::protocol::Request::ExecutionStatus {
@@ -103,6 +110,79 @@ fn prepare_fetched_review(
     Ok(serde_json::to_vec(
         &serde_json::json!({"enrollment": enrollment, "review": review}),
     )?)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReceiptSubmission {
+    enrollment: std::path::PathBuf,
+    id: String,
+    signature: String,
+    share_output: bool,
+}
+
+fn submit_receipt(input: &[u8]) -> Result<()> {
+    let submission: ReceiptSubmission = serde_json::from_slice(input)?;
+    ensure!(submission.signature.len() <= 144, "signature too large");
+    let signature = hex::decode(&submission.signature)?;
+    let reference = ReviewReference {
+        enrollment: submission.enrollment,
+        id: submission.id,
+    };
+    let enrollment = load_enrollment(&reference)?;
+    let status = crate::transport::call_protected(
+        &enrollment.socket,
+        &crate::protocol::Request::ExecutionStatus {
+            id: reference.id.clone(),
+        },
+    )?;
+    let prepared: serde_json::Value = serde_json::from_slice(&prepare_fetched_review(
+        &enrollment,
+        &reference.id,
+        &status,
+        crate::broker::now(),
+    )?)?;
+    let envelope: Envelope = serde_json::from_value(prepared["review"]["envelope"].clone())?;
+    crate::approval_key::ApprovalKey::parse(&enrollment.signing_key)?.verify(
+        &envelope.receipt_approval_payload(submission.share_output)?,
+        &signature,
+    )?;
+    let result = crate::transport::call_protected(
+        &enrollment.socket,
+        &crate::protocol::Request::ApproveReceipt {
+            id: reference.id.clone(),
+            key_id: enrollment.signing_key_id,
+            number: envelope.number,
+            signature: submission.signature,
+            share_output: submission.share_output,
+        },
+    )?;
+    ensure!(
+        result["receipt_only"] == true
+            && result["id"] == reference.id
+            && result["state"] == "consumed",
+        "receipt acknowledgement not verified"
+    );
+    Ok(())
+}
+
+/// Submit a signed receipt through protected enrollment. Never signs or retries.
+/// Returns 1 only for a verified consumption acknowledgement; -1 otherwise.
+/// A -1 may mean the reply was lost after consumption: never automatically retry.
+///
+/// # Safety
+/// Input must reference input_len readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn sudo_relay_submit_receipt(input: *const u8, input_len: usize) -> i32 {
+    if input.is_null() || input_len == 0 || input_len > 4096 {
+        return -1;
+    }
+    match std::panic::catch_unwind(|| {
+        submit_receipt(unsafe { std::slice::from_raw_parts(input, input_len) })
+    }) {
+        Ok(Ok(())) => 1,
+        _ => -1,
+    }
 }
 
 /// Retrieve and validate a pending request from a root-authenticated local socket.
@@ -298,11 +378,13 @@ mod tests {
     fn native_enrollment_binds_account_target_labels_and_receipt_mode() {
         let original = json!({"version":1,"receipt_only":true,"socket":"/run/receipt.sock",
             "machine_id":"00000000-0000-4000-8000-000000000001","approver_uid":10002,
-            "signing_key":fixture_key(),"machine_name":"test-host","operating_system":"macOS test","account":"test-user"});
+            "signing_key":fixture_key(),"signing_key_id":"native","machine_name":"test-host","operating_system":"macOS test","account":"test-user"});
         let enrollment: ReviewEnrollment = serde_json::from_value(original.clone()).unwrap();
         enrollment.validate(10002).unwrap();
         assert!(enrollment.validate(10001).is_err());
         for (field, value) in [
+            ("signing_key_id", json!("../injected")),
+            ("signing_key_id", json!("")),
             ("signing_key", json!("p256-sha256:00")),
             (
                 "signing_key",
@@ -344,6 +426,7 @@ mod tests {
             socket: "/run/test.sock".into(),
             approver_uid: 10002,
             signing_key: fixture_key(),
+            signing_key_id: "native".into(),
             machine_name: "test-host".into(),
             operating_system: "test OS".into(),
             account: "test-user".into(),
@@ -373,6 +456,25 @@ mod tests {
         let mut missing = original;
         missing.as_object_mut().unwrap().remove("receipt_only");
         assert!(prepare_fetched_review(&enrollment, &envelope.id, &missing, 1700000001).is_err());
+    }
+
+    #[test]
+    fn native_submission_rejects_invalid_input_without_fallback() {
+        for input in [b"null".as_slice(),
+            br#"{"enrollment":"relative","id":"request","signature":"00","share_output":false}"#,
+            br#"{"enrollment":"/missing","id":"request","signature":"not-hex","share_output":false}"#,
+            br#"{"enrollment":"/missing","id":"request","signature":"00","share_output":false,"command":"injected"}"#,
+        ] {
+            assert_eq!(unsafe { sudo_relay_submit_receipt(input.as_ptr(), input.len()) }, -1);
+        }
+        assert_eq!(
+            unsafe { sudo_relay_submit_receipt(std::ptr::null(), 1) },
+            -1
+        );
+        assert_eq!(
+            unsafe { sudo_relay_submit_receipt(b"x".as_ptr(), 4097) },
+            -1
+        );
     }
 
     #[test]

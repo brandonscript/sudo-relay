@@ -17,3 +17,7 @@ intptr_t sudo_relay_fetch_review(const uint8_t *input, size_t input_len,
 intptr_t sudo_relay_prepare_review(const uint8_t *input, size_t input_len,
     const uint8_t *machine, size_t machine_len, uint64_t now,
     uint8_t *output, size_t capacity);
+
+// JSON {enrollment,id,signature,share_output}, <=4096 bytes. Receipt-only submission.
+// Returns 1 only for verified consumption, -1 otherwise (outcome may be unknown). Never retry automatically.
+int32_t sudo_relay_submit_receipt(const uint8_t *input, size_t input_len);

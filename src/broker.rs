@@ -206,7 +206,7 @@ impl Drop for StateLock {
     }
 }
 
-fn validate_key_id(id: &str) -> Result<()> {
+pub(crate) fn validate_key_id(id: &str) -> Result<()> {
     ensure!(
         !id.is_empty()
             && id.len() <= 64

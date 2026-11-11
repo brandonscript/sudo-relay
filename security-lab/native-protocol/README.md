@@ -105,3 +105,11 @@ with `build-protected-check.sh OUTPUT`. It runs the protected Swift model under
 the approving account and signs with a known software fixture key. This is a
 headless receipt check, not a production signer: no UI, Touch ID or command runs.
 The helper requires `PE_NATIVE_RECEIPT_CHECK=1` and fixture-specific labels.
+
+`sudo_relay_submit_receipt` is the separate submission ABI. Its strict JSON input
+is `{enrollment,id,signature,share_output}`. It returns 1 only after validating a
+receipt-consumption acknowledgement, or -1 for an unconfirmed result. Do not
+automatically retry -1: the server may have consumed the receipt before a lost
+reply. `BrokerReview.submitReceipt` exposes this only for a protected enrollment
+model; the older same-user constructor cannot use it. No signing or execution is
+performed by this bridge.

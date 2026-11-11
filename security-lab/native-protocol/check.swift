@@ -95,6 +95,10 @@ struct Check {
             try native.verifySigningKey(key.publicKey)
             preconditionFailure("Fixture without protected enrollment accepted a signing key")
         } catch ReviewError.invalidAuthority { }
+        do {
+            try native.submitReceipt(signature: Data([0]), shareOutput: false)
+            preconditionFailure("Unprotected fixture submitted a protected receipt")
+        } catch ReviewError.invalidAuthority { }
         let shared = try native.decision(shareOutput: true, now: 1700000001)
         let withheld = try native.decision(shareOutput: false, now: 1700000001)
         precondition(shared == unhex(review.approval_shared) && withheld == unhex(review.approval_withheld))
