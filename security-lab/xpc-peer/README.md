@@ -13,7 +13,7 @@ python3 security-lab/xpc-peer/check.py
 
 The harness builds client/service processes and a receipt-only Rust child into temporary app/XPC bundles, signs
 them ad hoc with the hardened-runtime option, pins their exact code-directory
-hashes, and runs ten cases. The signed-review case creates disposable software keys
+hashes, and runs thirteen cases. The signed-review case creates disposable software keys
 in the temporary fixture directory. It uses no signing certificate, password,
 biometric prompt, network listener, sudo/PAM change or installed service.
 macOS launches the bundled helper on demand. Helpers retain state across individual
@@ -178,9 +178,9 @@ canary file remains absent. No executor is called.
 The Rust child is built only with the lab feature, signed ad hoc and included in
 the service bundle. The harness verifies the bundle before running it. This is
 not protected deployment: the fixture's bundle, configuration and keys remain
-same-user writable. Runtime child identity validation, replacement races and
-protected installation still need implementation and testing; an XPC peer check
-does not independently authenticate a subsequently launched child process.
+same-user writable. Child identity checks are described below; replacement races
+and protected installation remain open. An XPC peer check by itself does not
+authenticate a subsequently launched child process.
 
 On child communication failure the service disables that path and returns no
 result. It never restarts the child, retries an approval or falls back to the
@@ -188,3 +188,30 @@ older in-memory verifier. The separate pipe test covers Rust process restart and
 spent approval persistence; this tenth case does not yet test an XPC service
 restart or a lost submission reply. The existing manual Touch ID app still uses
 the older JSON receipt path; no new hardware claim follows from this test.
+
+## Verifier child identity
+
+The durable XPC mode now requires a separate `verifier` code requirement in the
+fixture enrollment. Before launch it validates the executable against that pin
+with [SecStaticCodeCheckValidity](https://developer.apple.com/documentation/security/secstaticcodecheckvalidity(_:_:_:)).
+After launch it obtains the child's code identity by PID and validates it, then
+rechecks the live identity before sending each request. The child receives only
+the explicit lab opt-in environment variable, not the parent environment. Any
+validation failure aborts this path; there is no unpinned fallback or restart.
+The standalone pipe fixture intentionally does not claim this identity check.
+
+Three additional cases passed locally November 10, 2026:
+
+- Re-sign the unchanged verifier under a different identity and explicitly pin
+  it: the positive control still verifies one receipt and rejects replay.
+- Use the same changed verifier with the original pin: service initialization
+  rejects it; no SQLite ledger exists, showing the child did not start.
+- Omit the verifier pin: initialization also rejects before the child starts.
+
+These tests exercise pre-launch mismatch rejection and successful live-process
+validation. They do not simulate an exec/replacement during the validation-to-launch
+interval or prove protection against process injection. Static validation alone
+is unsafe if another process can concurrently replace the file. Dynamic checks
+before sending a request cannot undo effects of malicious code that already ran
+at launch. Protected executable/ancestor ownership, enrollment and update policy
+remain required; current same-user fixtures deliberately do not provide them.

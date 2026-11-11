@@ -218,3 +218,9 @@ verifier through the service. One approval consumes; altered sharing and replay
 reject; status is `consumed`; canary remains absent. Ten XPC cases pass locally.
 This is not runtime child identity protection, administrator enrollment or a
 hardware-signing test. See the [XPC limits](xpc-peer/README.md#durable-broker-path-through-xpc).
+
+NP6: The XPC suite pins the bundled verifier child separately. A changed child
+with its new pin accepts one test receipt; the same child with the old pin and
+a missing-pin case both fail before ledger creation. Valid child processes also
+pass identity checks before each request. Thirteen cases pass locally. Dynamic
+replacement, launch races, injection and protected path ownership remain open.

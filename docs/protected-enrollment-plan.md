@@ -151,6 +151,14 @@ child or switches verification formats. Runtime child identity, protected
 installation/enrollment and hardware signing on this joined path remain open;
 bundle verification in the fixture is not a substitute for those boundaries.
 
+The durable XPC mode now additionally requires a verifier code pin, validates the
+file before launch and the running child before request delivery, and clears the
+inherited environment. Replacement positive/negative controls and missing-pin
+rejection pass; thirteen XPC cases pass locally. This closes the unchecked-child
+path in the fixture, not the protected-installation requirement: static-check to
+launch replacement races and injection remain unevaluated. No code-identity check
+proves that a human approved, and no protected enrollment has been installed.
+
 The dependency and its transitive graph are locked. This increment is not a full
 cryptographic dependency audit; upstream advisories and release provenance still
 need the release review already listed in the backlog.

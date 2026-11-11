@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 /// Receipt-lab child process only. Owners serialize access; failures never restart the child.
 final class ReceiptProcess {
@@ -6,14 +7,33 @@ final class ReceiptProcess {
     private let input = Pipe()
     private let output = Pipe()
     private var started = false
+    private let requirement: SecRequirement?
+    private var childCode: SecCode?
 
-    init(executable: URL, config: URL) throws {
+    init(executable: URL, config: URL, expectedCode: String? = nil) throws {
+        var parsed: SecRequirement?
+        if let expectedCode {
+            guard SecRequirementCreateWithString(expectedCode as CFString, [], &parsed) == errSecSuccess,
+                  let parsed else { throw ReviewError.invalidAuthority }
+            var fileCode: SecStaticCode?
+            guard SecStaticCodeCreateWithPath(executable as CFURL, [], &fileCode) == errSecSuccess,
+                  let fileCode,
+                  SecStaticCodeCheckValidity(fileCode, SecCSFlags(rawValue: UInt32(kSecCSStrictValidate)), parsed) == errSecSuccess
+            else { throw ReviewError.invalidAuthority }
+        }
+        requirement = parsed
         process.executableURL = executable
         process.arguments = [config.path]
-        process.environment = ProcessInfo.processInfo.environment.merging(["SUDO_RELAY_RECEIPT_LAB": "1"]) { _, new in new }
+        process.environment = ["SUDO_RELAY_RECEIPT_LAB": "1"]
         process.standardInput = input; process.standardOutput = output
         try process.run()
         started = true
+        if let requirement {
+            let attributes = [kSecGuestAttributePid as String: process.processIdentifier] as CFDictionary
+            guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &childCode) == errSecSuccess,
+                  let childCode, SecCodeCheckValidity(childCode, [], requirement) == errSecSuccess
+            else { stop(); throw ReviewError.invalidAuthority }
+        }
     }
 
     func call(_ request: [String: Any]) throws -> [String: Any] {
@@ -23,6 +43,11 @@ final class ReceiptProcess {
     }
 
     func exchange(_ request: Data) throws -> Data {
+        if let requirement {
+            guard process.isRunning, let childCode,
+                  SecCodeCheckValidity(childCode, [], requirement) == errSecSuccess
+            else { throw ReviewError.invalidAuthority }
+        }
         guard request.count < 65536, !request.contains(10), !request.contains(13) else { throw ReviewError.invalidRequest }
         var bytes = request; bytes.append(10)
         try input.fileHandleForWriting.write(contentsOf: bytes)

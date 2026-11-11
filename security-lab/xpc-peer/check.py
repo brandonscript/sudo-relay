@@ -88,9 +88,10 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
         *(str(path) for path in approval_sources), str(SOURCE / "NativeClient.swift"), "-o", str(native_binary))
     original_client = cdhash(original)
     original_service = cdhash(helper)
+    original_verifier = cdhash(helper / "Contents/Helpers/receipt-verifier")
     results: list[dict[str, object]] = []
     for case in ["allowed", "variant-client-allowed", "substituted-client", "variant-service-allowed",
-                 "substituted-service", "substituted-service-without-handshake", "signed-review", "signed-denied", "signed-reconnect", "durable-review"]:
+                 "substituted-service", "substituted-service-without-handshake", "signed-review", "signed-denied", "signed-reconnect", "durable-review", "durable-child-allowed", "durable-child-rejected", "durable-child-missing-pin"]:
         case_root = root / case
         app = case_root / "PeerLab.app"
         shutil.copytree(original, app)
@@ -102,6 +103,13 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
             vary(service)
             sign(app)
             assert cdhash(service) != original_service
+        if case in ["durable-child-allowed", "durable-child-rejected"]:
+            child = service / "Contents/Helpers/receipt-verifier"
+            run("/usr/bin/codesign", "--force", "--sign", "-", "--options", "runtime",
+                "--identifier", "local.sudo-relay.changed-verifier", str(child))
+            assert cdhash(child) != original_verifier
+            sign(service)
+            sign(app)
         run("/usr/bin/codesign", "--verify", "--deep", "--strict", str(app))
         # Fixture-controlled pins outside the signed bundles avoid circular code hashes.
         # This same-user file is NOT a protected production enrollment store.
@@ -110,13 +118,18 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
         (case_root / "policy.json").write_text(json.dumps({
             "client": f'identifier "local.sudo-relay.peer-client" and cdhash H"{client_pin}"',
             "service": f'identifier "local.sudo-relay.peer-service" and cdhash H"{service_pin}"',
+            "verifier": f'cdhash H"{original_verifier if case == "durable-child-rejected" else cdhash(service / "Contents/Helpers/receipt-verifier")}"',
         }))
+        if case == "durable-child-missing-pin":
+            policy = json.loads((case_root / "policy.json").read_text())
+            del policy["verifier"]
+            (case_root / "policy.json").write_text(json.dumps(policy))
         characterization = case.endswith("without-handshake")
         arguments = ["--characterize-without-handshake"] if characterization else []
-        if case in ["signed-review", "signed-denied", "signed-reconnect", "durable-review"]:
+        if case in ["signed-review", "signed-denied", "signed-reconnect", "durable-review", "durable-child-allowed", "durable-child-rejected", "durable-child-missing-pin"]:
             run(str(app / "Contents/MacOS/Client"), "--fixture-key")
-            arguments = [f"--{case}"]
-        if case == "durable-review":
+            arguments = ["--durable-review" if case.startswith("durable-") else f"--{case}"]
+        if case.startswith("durable-"):
             state = case_root / "state"
             state.mkdir(mode=0o700)
             (state / "keys").mkdir(mode=0o700)
@@ -131,11 +144,16 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
                                 capture_output=True, timeout=15)
         events = [json.loads(line) for line in result.stdout.splitlines()]
         receipt = case_root / "receipt.txt"
-        if case in ["signed-review", "signed-denied", "signed-reconnect", "durable-review"]:
+        if case in ["durable-child-rejected", "durable-child-missing-pin"]:
+            assert result.returncode == 1 and len(events) == 1 and events[0]["event"] == "peer-rejected", (case, result)
+            assert not (case_root / "state/state.sqlite3").exists(), "rejected child must not start"
+            assert not (case_root / "must-not-exist").exists()
+        elif case in ["signed-review", "signed-denied", "signed-reconnect", "durable-review", "durable-child-allowed"]:
             expected = {"signed-review": "signed-review-one-receipt-alteration-and-replay-rejected",
                         "signed-denied": "signed-review-denied-zero-receipts",
                         "signed-reconnect": "replacement-peer-verified-approved-replay-rejected",
-                        "durable-review": "durable-xpc-one-receipt-alteration-and-replay-rejected"}[case]
+                        "durable-review": "durable-xpc-one-receipt-alteration-and-replay-rejected",
+                        "durable-child-allowed": "durable-xpc-one-receipt-alteration-and-replay-rejected"}[case]
             assert result.returncode == 0 and events == [{"event": "peer-verified"},
                 {"event": expected}], (case, result)
             assert not receipt.exists()
@@ -149,7 +167,7 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
             assert events[0]["code"] in (["4102"] if case.startswith("substituted-service") else ["4097", "4102"]), (case, events)
             assert receipt.exists() == characterization, f"{case}: unexpected receipt state"
         results.append({"case": case, "expectation_met": True, "known_unsafe_pattern": characterization,
-                        "receipt_count": 1 if case in ["signed-review", "signed-reconnect", "durable-review"] else int(receipt.exists()), "events": events})
+                        "receipt_count": 1 if case in ["signed-review", "signed-reconnect", "durable-review", "durable-child-allowed"] else int(receipt.exists()), "events": events})
     native_app: str | None = None
     if sys.argv[1:] == ["--prepare-native"]:
         packaged = run("/usr/bin/xcrun", "swift", "-module-cache-path", str(root / "modules"),

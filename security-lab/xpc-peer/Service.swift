@@ -13,7 +13,8 @@ final class ReceiptService: NSObject, NSXPCListenerDelegate, PeerReceiptProtocol
         self.policy = policy; self.root = root
         let config = root.appendingPathComponent("broker-config.json")
         if FileManager.default.fileExists(atPath: config.path) {
-            durable = try ReceiptProcess(executable: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/receipt-verifier"), config: config)
+            guard let verifierPin = policy.verifier else { throw ReviewError.invalidAuthority }
+            durable = try ReceiptProcess(executable: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/receipt-verifier"), config: config, expectedCode: verifierPin)
         }
         let keyFile = root.appendingPathComponent("fixture-public.key")
         if FileManager.default.fileExists(atPath: keyFile.path) {

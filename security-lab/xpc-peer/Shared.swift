@@ -16,12 +16,13 @@ protocol PeerReceiptProtocol: Sendable {
 struct PeerPolicy: Decodable {
     let client: String
     let service: String
+    let verifier: String?
 
     static func load(from root: URL) throws -> PeerPolicy {
         let data = try Data(contentsOf: root.appendingPathComponent("policy.json"))
         guard data.count <= 4096 else { throw NSError(domain: "PeerLab", code: 1) }
         let policy = try JSONDecoder().decode(Self.self, from: data)
-        for value in [policy.client, policy.service] {
+        for value in [policy.client, policy.service] + [policy.verifier].compactMap({ $0 }) {
             var requirement: SecRequirement?
             let result = SecRequirementCreateWithString(value as CFString, [], &requirement)
             guard result == errSecSuccess, requirement != nil else {
