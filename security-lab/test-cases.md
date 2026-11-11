@@ -427,3 +427,18 @@ negative controls pass. The positive cross-account Swift path passed the macOS
 root job in CI run 42944467261; the Linux root job also passed. Other jobs were
 still running at this checkpoint. It does
 not establish native window integrity, Touch ID protection or installed identity.
+
+### Enrolled signer identity before signature generation
+
+Native receipt enrollment now requires a valid P-256 public key. Local tests reject
+a missing key, malformed encoding, an off-curve point and the other supported
+algorithm. Swift rejects key verification when using the older unprotected
+fixture constructor. The disposable macOS root test supplies a valid but different
+enrolled public key and requires the headless signer to fail with empty stdout;
+then the correct pin must retain the positive consumption/replay control. These
+new root cases await CI. Local Rust tests, Swift checks/build and strict lint pass.
+
+This pins which public key the protected native flow expects. It does not store
+or protect a private key, prove hardware authentication, or atomically synchronize
+a changed enrollment with a pending native review. The broker still checks its
+current trust store and revocation state before consuming a signature.

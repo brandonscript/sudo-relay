@@ -11,16 +11,21 @@ controller creates it; the reviewing application cannot enroll itself.
   "machine_id": "00000000-0000-4000-8000-000000000001",
   "socket": "/protected/fixture/broker.sock",
   "approver_uid": 10002,
+  "signing_key": "p256-sha256:<130 hex characters from the enrolled public key>",
   "machine_name": "protected-receipt-fixture",
   "operating_system": "Disposable OS fixture",
   "account": "test-user"
 }
 ```
 
+Replace the signing-key placeholder with the real uncompressed public point;
+the placeholder itself is deliberately invalid. No private key belongs here.
+
 The file and its ancestors must be root-owned and not writable by other accounts.
 The file is bounded to 4096 bytes. It contains no signing secret; fixture mode 0644
 allows the designated ordinary user to read it. The loader rejects another UID,
-unknown fields/versions, relative socket paths, invalid machine UUIDs, control
+unknown fields/versions, invalid or non-P-256 public keys, relative socket paths,
+invalid machine UUIDs, control
 characters and oversized display labels. Only receipt-only records are accepted.
 
 The native model receives this file's path and a request ID. It obtains the socket,
@@ -42,3 +47,10 @@ record cases passed full CI run 42943601838. No personal-machine root service is
 installed. The headless Swift model and software signature passed the separate
 approving-account macOS root job in CI run 42944467261; this does not test a
 protected hardware key or interactive UI.
+
+Before signing, the native protected flow compares its loaded public key against
+this administrator-provided key. A mismatch fails before signature generation.
+The broker remains the final authority for key trust and revocation; this local
+check cannot replace its signature verification. The older same-user fixture
+constructor has no protected key pin and cannot pass this check. Key persistence,
+protected interactive integration and atomic enrollment updates remain open.

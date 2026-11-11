@@ -19,6 +19,7 @@ struct ReviewEnrollment {
     machine_id: String,
     socket: std::path::PathBuf,
     approver_uid: u32,
+    signing_key: String,
     machine_name: String,
     operating_system: String,
     account: String,
@@ -36,6 +37,13 @@ impl ReviewEnrollment {
         ensure!(
             self.socket.is_absolute() && uuid::Uuid::parse_str(&self.machine_id).is_ok(),
             "invalid enrolled target"
+        );
+        ensure!(
+            matches!(
+                crate::approval_key::ApprovalKey::parse(&self.signing_key)?,
+                crate::approval_key::ApprovalKey::P256(_)
+            ),
+            "native receipt enrollment requires P-256"
         );
         for label in [&self.machine_name, &self.operating_system, &self.account] {
             ensure!(
@@ -275,15 +283,29 @@ mod tests {
     use super::*;
     use serde_json::{json, Value};
 
+    fn fixture_key() -> String {
+        let key = p256::ecdsa::SigningKey::from_slice(&[27; 32]).unwrap();
+        format!(
+            "p256-sha256:{}",
+            hex::encode(key.verifying_key().to_sec1_point(false).as_bytes())
+        )
+    }
+
     #[test]
     fn native_enrollment_binds_account_target_labels_and_receipt_mode() {
         let original = json!({"version":1,"receipt_only":true,"socket":"/run/receipt.sock",
             "machine_id":"00000000-0000-4000-8000-000000000001","approver_uid":10002,
-            "machine_name":"test-host","operating_system":"macOS test","account":"test-user"});
+            "signing_key":fixture_key(),"machine_name":"test-host","operating_system":"macOS test","account":"test-user"});
         let enrollment: ReviewEnrollment = serde_json::from_value(original.clone()).unwrap();
         enrollment.validate(10002).unwrap();
         assert!(enrollment.validate(10001).is_err());
         for (field, value) in [
+            ("signing_key", json!("p256-sha256:00")),
+            (
+                "signing_key",
+                json!(format!("p256-sha256:04{}", "00".repeat(64))),
+            ),
+            ("signing_key", json!("00".repeat(32))),
             ("version", json!(2)),
             ("receipt_only", json!(false)),
             ("approver_uid", json!(0)),
@@ -300,6 +322,9 @@ mod tests {
                 .validate(10002)
                 .is_err());
         }
+        let mut missing = original.clone();
+        missing.as_object_mut().unwrap().remove("signing_key");
+        assert!(serde_json::from_value::<ReviewEnrollment>(missing).is_err());
         let mut unknown = original;
         unknown["allow_fallback"] = json!(true);
         assert!(serde_json::from_value::<ReviewEnrollment>(unknown).is_err());
@@ -315,6 +340,7 @@ mod tests {
             machine_id: envelope.machine_id.clone(),
             socket: "/run/test.sock".into(),
             approver_uid: 10002,
+            signing_key: fixture_key(),
             machine_name: "test-host".into(),
             operating_system: "test OS".into(),
             account: "test-user".into(),

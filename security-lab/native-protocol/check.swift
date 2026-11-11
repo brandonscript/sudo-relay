@@ -90,6 +90,11 @@ struct Check {
         precondition(tooSmall.0 == -2 && tooSmall.1 == Data(repeating: 0xaa, count: 8))
         let native = try BrokerReview(authenticatedPending: input, pairedMachine: "fixture-machine",
             machineName: "local-receipt-lab", operatingSystem: "macOS test", account: "test-user", now: 1700000001)
+        do {
+            let key = try P256.Signing.PrivateKey(rawRepresentation: Data(repeating: 27, count: 32))
+            try native.verifySigningKey(key.publicKey)
+            preconditionFailure("Fixture without protected enrollment accepted a signing key")
+        } catch ReviewError.invalidAuthority { }
         let shared = try native.decision(shareOutput: true, now: 1700000001)
         let withheld = try native.decision(shareOutput: false, now: 1700000001)
         precondition(shared == unhex(review.approval_shared) && withheld == unhex(review.approval_withheld))

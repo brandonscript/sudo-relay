@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import ReviewCore
 
@@ -40,6 +41,7 @@ struct BrokerReview: NativeReviewContent {
         }
     }
 
+    private let enrolledSigningKey: Data?
     private let prepared: Prepared
     private let shared: Data
     private let withheld: Data
@@ -57,7 +59,7 @@ struct BrokerReview: NativeReviewContent {
 
     init(protectedEnrollment: URL, requestID: String) throws {
         struct Reference: Encodable { let enrollment: String; let id: String }
-        struct Labels: Decodable { let machine_name: String; let operating_system: String; let account: String }
+        struct Labels: Decodable { let machine_name: String; let operating_system: String; let account: String; let signing_key: String }
         struct Fetched: Decodable { let enrollment: Labels; let review: Prepared }
         let reference = try JSONEncoder().encode(Reference(enrollment: protectedEnrollment.path, id: requestID))
         var output = [UInt8](repeating: 0, count: 131072)
@@ -69,6 +71,8 @@ struct BrokerReview: NativeReviewContent {
         }
         guard count > 0, count <= output.count else { throw ReviewError.invalidAuthority }
         let fetched = try JSONDecoder().decode(Fetched.self, from: Data(output.prefix(count)))
+        guard fetched.enrollment.signing_key.hasPrefix("p256-sha256:") else { throw ReviewError.invalidAuthority }
+        enrolledSigningKey = try Self.decodeHex(String(fetched.enrollment.signing_key.dropFirst("p256-sha256:".count)))
         prepared = fetched.review
         shared = try Self.decodeHex(prepared.approval_shared)
         withheld = try Self.decodeHex(prepared.approval_withheld)
@@ -93,10 +97,18 @@ struct BrokerReview: NativeReviewContent {
             }
         }
         guard count > 0, count <= output.count else { throw ReviewError.invalidRequest }
+        enrolledSigningKey = nil
         prepared = try JSONDecoder().decode(Prepared.self, from: Data(output.prefix(count)))
         shared = try Self.decodeHex(prepared.approval_shared)
         withheld = try Self.decodeHex(prepared.approval_withheld)
         subtitle = "\(machineName) · \(operatingSystem) · \(account)"
+    }
+
+    /// Check the loaded key before asking for a fingerprint; the broker still verifies every signature.
+    func verifySigningKey(_ publicKey: P256.Signing.PublicKey) throws {
+        guard let enrolledSigningKey, enrolledSigningKey == publicKey.x963Representation else {
+            throw ReviewError.invalidAuthority
+        }
     }
 
     func decision(shareOutput: Bool, now: Int64) throws -> Data {

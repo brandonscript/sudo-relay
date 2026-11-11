@@ -34,6 +34,7 @@ struct ProtectedReviewCheck {
         let withheld = try review.decision(shareOutput: false, now: now)
         let keyBytes = try Data(contentsOf: enrollment.deletingLastPathComponent().appendingPathComponent("host/host.key"))
         let key = try P256.Signing.PrivateKey(rawRepresentation: keyBytes)
+        try review.verifySigningKey(key.publicKey)
         let signature = try key.signature(for: withheld).derRepresentation
         let result = Result(id: review.requestID, number: review.confirmationNumber,
             subtitle: review.subtitle, command: review.commandText(), shared: hex(shared), withheld: hex(withheld), signature: hex(signature))

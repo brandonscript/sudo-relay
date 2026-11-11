@@ -573,11 +573,29 @@ fn protected_receipt_socket_roundtrip(config: &Config) {
             0
         );
     }
+    let signing_key = p256::ecdsa::SigningKey::from_slice(&[27; 32]).unwrap();
+    let other_key = p256::ecdsa::SigningKey::from_slice(&[28; 32]).unwrap();
     let enrollment = serde_json::json!({"version": 1, "receipt_only": true,
+        "signing_key": format!("p256-sha256:{}", hex::encode(signing_key.verifying_key().to_sec1_point(false).as_bytes())),
         "machine_id": config.machine_id, "socket": config.socket, "approver_uid": config.approver_uid,
         "machine_name": "protected-receipt-fixture", "operating_system": "Disposable OS fixture", "account": "test-user"});
     for (name, field, value, mode) in [
         ("enrollment.json", "version", serde_json::json!(1), 0o644),
+        (
+            "wrong-key.json",
+            "signing_key",
+            serde_json::json!(format!(
+                "p256-sha256:{}",
+                hex::encode(other_key.verifying_key().to_sec1_point(false).as_bytes())
+            )),
+            0o644,
+        ),
+        (
+            "invalid-key.json",
+            "signing_key",
+            serde_json::json!("p256-sha256:00"),
+            0o644,
+        ),
         (
             "wrong-machine.json",
             "machine_id",
@@ -735,6 +753,7 @@ fn native_receipt_peer(config: &Config) {
         (argument.as_str(), "wrong-machine.json", 65536, -1),
         (argument.as_str(), "wrong-account.json", 65536, -1),
         (argument.as_str(), "writable-enrollment.json", 65536, -1),
+        (argument.as_str(), "invalid-key.json", 65536, -1),
         ("unknown-request", "enrollment.json", 65536, -1),
         (argument.as_str(), "enrollment.json", 1, -2),
     ] {
@@ -769,6 +788,17 @@ fn native_receipt_peer(config: &Config) {
     };
     #[cfg(target_os = "macos")]
     let proof = {
+        let rejected = Process::new(run.join("native-review-check"))
+            .arg(run.join("wrong-key.json"))
+            .arg(&argument)
+            .env("PE_NATIVE_RECEIPT_CHECK", "1")
+            .output()
+            .unwrap();
+        assert!(
+            !rejected.status.success(),
+            "wrong enrolled signing key accepted"
+        );
+        assert!(rejected.stdout.is_empty());
         let result = Process::new(run.join("native-review-check"))
             .arg(run.join("enrollment.json"))
             .arg(&argument)
