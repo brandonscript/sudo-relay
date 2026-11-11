@@ -2,7 +2,7 @@ use crate::approval_key::ApprovalKey;
 use crate::execution::{self, Outcome};
 use crate::protocol::{Envelope, Reply, Request, MAX_EXECUTION_TIMEOUT_SECS};
 use anyhow::{ensure, Context, Result};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -206,6 +206,18 @@ impl Drop for StateLock {
     }
 }
 
+fn validate_key_id(id: &str) -> Result<()> {
+    ensure!(
+        !id.is_empty()
+            && id.len() <= 64
+            && id
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'),
+        "invalid key id"
+    );
+    Ok(())
+}
+
 pub struct Broker {
     pub config: Config,
     db: Connection,
@@ -216,6 +228,35 @@ pub struct Broker {
 }
 impl Broker {
     pub fn open(config: Config, development: bool) -> Result<Self> {
+        let owner = Self::state_owner(&config, development)?;
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(config.state_dir.join("broker.lock"))?;
+        ensure!(
+            unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0,
+            "broker already owns state directory"
+        );
+        let db = Self::open_database(&config, development)?;
+        db.execute_batch("BEGIN IMMEDIATE;
+            INSERT INTO audit(time,id,event) SELECT unixepoch(),id,'uncertain' FROM requests WHERE state IN ('consumed','running');
+            UPDATE requests SET state='uncertain' WHERE state IN ('consumed','running');
+            INSERT INTO audit(time,id,event) SELECT unixepoch(),id,'cancelled_on_restart' FROM requests WHERE state='pending';
+            UPDATE requests SET state='cancelled' WHERE state='pending'; COMMIT;")?;
+        Ok(Self {
+            config,
+            db,
+            _lock: StateLock(lock),
+            owner,
+            development,
+            results: HashMap::new(),
+        })
+    }
+    fn state_owner(config: &Config, development: bool) -> Result<u32> {
         config.validate(development)?;
         let owner = if development {
             unsafe { libc::geteuid() }
@@ -237,55 +278,123 @@ impl Broker {
                 && metadata.mode() & 0o077 == 0,
             "state directory must be private and owned by broker"
         );
-        let lock = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(config.state_dir.join("broker.lock"))?;
-        ensure!(
-            unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0,
-            "broker already owns state directory"
-        );
+        Ok(owner)
+    }
+
+    fn open_database(config: &Config, development: bool) -> Result<Connection> {
+        let owner = Self::state_owner(config, development)?;
         let path = config.state_dir.join("state.sqlite3");
-        if !path.exists() {
-            fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(&path)?;
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+        {
+            Ok(_) => (),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => (),
+            Err(error) => return Err(error.into()),
         }
-        if path.exists() {
-            Self::check_private_file(&path, owner)?;
-        }
-        let db = Connection::open(path)?;
-        db.execute_batch("PRAGMA synchronous=FULL; PRAGMA journal_mode=DELETE;
-            CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, envelope TEXT NOT NULL, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, key_id TEXT);
+        Self::check_private_file(&path, owner)?;
+        let mut db = Connection::open(path)?;
+        db.execute_batch("PRAGMA synchronous=FULL; PRAGMA journal_mode=DELETE;")?;
+        let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute_batch("CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, envelope TEXT NOT NULL, state TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, key_id TEXT);
             CREATE TABLE IF NOT EXISTS audit(seq INTEGER PRIMARY KEY, time INTEGER NOT NULL, id TEXT NOT NULL, event TEXT NOT NULL, key_id TEXT);
-            BEGIN IMMEDIATE;
-            INSERT INTO audit(time,id,event) SELECT unixepoch(),id,'uncertain' FROM requests WHERE state IN ('consumed','running');
-            UPDATE requests SET state='uncertain' WHERE state IN ('consumed','running');
-            INSERT INTO audit(time,id,event) SELECT unixepoch(),id,'cancelled_on_restart' FROM requests WHERE state='pending';
-            UPDATE requests SET state='cancelled' WHERE state='pending'; COMMIT;")?;
-        let has_output_policy: bool = db.query_row(
+            CREATE TABLE IF NOT EXISTS revoked_keys(id TEXT PRIMARY KEY);")?;
+        let has_output_policy: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM pragma_table_info('requests') WHERE name='share_output')",
             [],
             |row| row.get(0),
         )?;
         if !has_output_policy {
-            db.execute_batch("ALTER TABLE requests ADD COLUMN share_output INTEGER NOT NULL DEFAULT 0 CHECK(share_output IN (0,1));")?;
+            tx.execute_batch("ALTER TABLE requests ADD COLUMN share_output INTEGER NOT NULL DEFAULT 0 CHECK(share_output IN (0,1));")?;
         }
-        Ok(Self {
-            config,
-            db,
-            _lock: StateLock(lock),
-            owner,
-            development,
-            results: HashMap::new(),
-        })
+        tx.commit()?;
+        Ok(db)
     }
+    fn retire_pending(db: &Connection, key_id: &str) -> Result<()> {
+        db.execute("INSERT INTO audit(time,id,event,key_id) SELECT unixepoch(),id,'cancelled_by_enrollment',?1 FROM requests WHERE state='pending'", [key_id])?;
+        db.execute(
+            "UPDATE requests SET state='cancelled' WHERE state='pending'",
+            [],
+        )?;
+        Ok(())
+    }
+
+    pub fn pair_key(config: &Config, development: bool, id: &str, encoded: &str) -> Result<()> {
+        use std::io::Write;
+        validate_key_id(id)?;
+        ApprovalKey::parse(encoded)?;
+        let mut db = Self::open_database(config, development)?;
+        let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let keys = config.state_dir.join("keys");
+        if !development {
+            protected_path(&keys, 0)?;
+        }
+        let path = keys.join(format!("{id}.pub"));
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) => return Err(error.into()),
+            Ok(_) => anyhow::bail!("approving key already exists"),
+        }
+        // An interrupted pairing must never enable an uncommitted key file.
+        tx.execute("INSERT OR IGNORE INTO revoked_keys(id) VALUES(?1)", [id])?;
+        Self::retire_pending(&tx, id)?;
+        tx.execute("INSERT INTO audit(time,id,event,key_id) VALUES(unixepoch(),'','key_pairing_started',?1)", [id])?;
+        tx.commit()?;
+        let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)?;
+        file.write_all(encoded.as_bytes())?;
+        file.sync_all()?;
+        fs::File::open(&keys)?.sync_all()?;
+        Self::retire_pending(&tx, id)?;
+        tx.execute("DELETE FROM revoked_keys WHERE id=?1", [id])?;
+        tx.execute(
+            "INSERT INTO audit(time,id,event,key_id) VALUES(unixepoch(),'','key_paired',?1)",
+            [id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn revoke_key(config: &Config, development: bool, id: &str) -> Result<()> {
+        validate_key_id(id)?;
+        let mut db = Self::open_database(config, development)?;
+        let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute("INSERT OR IGNORE INTO revoked_keys(id) VALUES(?1)", [id])?;
+        Self::retire_pending(&tx, id)?;
+        tx.execute(
+            "INSERT INTO audit(time,id,event,key_id) VALUES(unixepoch(),'','key_revoked',?1)",
+            [id],
+        )?;
+        // Commit denial first: a crash or failed file deletion must leave the key revoked.
+        tx.commit()?;
+        let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let still_revoked: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM revoked_keys WHERE id=?1)",
+            [id],
+            |row| row.get(0),
+        )?;
+        if !still_revoked {
+            return Ok(());
+        }
+        let keys = config.state_dir.join("keys");
+        if !development {
+            protected_path(&keys, 0)?;
+        }
+        match fs::remove_file(keys.join(format!("{id}.pub"))) {
+            Ok(()) => fs::File::open(keys)?.sync_all()?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) => return Err(error.into()),
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     fn check_private_file(path: &Path, owner: u32) -> Result<()> {
         let m = fs::symlink_metadata(path)?;
         ensure!(
@@ -305,15 +414,25 @@ impl Broker {
         share_output: Option<bool>,
     ) -> Result<()> {
         let tx = self.db.transaction()?;
-        tx.execute(
+        Self::record_transition(&tx, id, state, key, share_output)?;
+        tx.commit()?;
+        Ok(())
+    }
+    fn record_transition(
+        db: &Connection,
+        id: &str,
+        state: State,
+        key: Option<&str>,
+        share_output: Option<bool>,
+    ) -> Result<()> {
+        db.execute(
             "UPDATE requests SET state=?2,key_id=COALESCE(?3,key_id),share_output=COALESCE(?4,share_output) WHERE id=?1",
             params![id, state.as_str(), key, share_output],
         )?;
-        tx.execute(
+        db.execute(
             "INSERT INTO audit(time,id,event,key_id) VALUES(?1,?2,?3,?4)",
             params![i64::try_from(now())?, id, state.as_str(), key],
         )?;
-        tx.commit()?;
         Ok(())
     }
     fn expire(&mut self, time: u64) -> Result<()> {
@@ -346,14 +465,7 @@ impl Broker {
         ))
     }
     fn key(&self, id: &str) -> Result<ApprovalKey> {
-        ensure!(
-            !id.is_empty()
-                && id.len() <= 64
-                && id
-                    .bytes()
-                    .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'),
-            "invalid key id"
-        );
+        validate_key_id(id)?;
         let path = self.config.state_dir.join("keys").join(format!("{id}.pub"));
         Self::check_private_file(&path, self.owner)?;
         let bytes = if self.development {
@@ -363,7 +475,20 @@ impl Broker {
         };
         ApprovalKey::parse(std::str::from_utf8(&bytes)?)
     }
+    /// Fixed-time entry point for deterministic fixtures. Live transports use handle_current.
     pub fn handle(&mut self, req: Request, uid: u32, time: u64) -> Result<(Reply, Option<Job>)> {
+        self.handle_with_clock(req, uid, || time)
+    }
+    pub fn handle_current(&mut self, req: Request, uid: u32) -> Result<(Reply, Option<Job>)> {
+        self.handle_with_clock(req, uid, now)
+    }
+    fn handle_with_clock(
+        &mut self,
+        req: Request,
+        uid: u32,
+        clock: impl Fn() -> u64,
+    ) -> Result<(Reply, Option<Job>)> {
+        let time = clock();
         ensure!(
             uid == self.config.agent_uid || uid == self.config.approver_uid,
             "peer not authorized"
@@ -440,6 +565,14 @@ impl Broker {
                 share_output,
             } => {
                 ensure!(uid == self.config.approver_uid, "peer cannot approve");
+                let tx = Transaction::new_unchecked(&self.db, TransactionBehavior::Immediate)?;
+                let time = clock();
+                let revoked: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM revoked_keys WHERE id=?1)",
+                    [&key_id],
+                    |row| row.get(0),
+                )?;
+                ensure!(!revoked, "approving key is revoked");
                 let (env, state, attempts) = self.load(&id)?;
                 ensure!(
                     state == State::Pending && time < env.expires_at,
@@ -460,12 +593,25 @@ impl Broker {
                     self.db
                         .execute("UPDATE requests SET attempts=attempts+1 WHERE id=?1", [&id])?;
                     if attempts >= 2 {
-                        self.transition(&id, State::Cancelled, Some(&key_id), None)?;
+                        Self::record_transition(&tx, &id, State::Cancelled, Some(&key_id), None)?;
                     }
+                    tx.commit()?;
                     anyhow::bail!("incorrect confirmation number");
                 }
                 // Consumption commits before any execution thread is created. Retries never launch twice.
-                self.transition(&id, State::Consumed, Some(&key_id), Some(share_output))?;
+                let time = clock();
+                ensure!(
+                    time >= env.created_at && time < env.expires_at,
+                    "approval outside validity window"
+                );
+                Self::record_transition(
+                    &tx,
+                    &id,
+                    State::Consumed,
+                    Some(&key_id),
+                    Some(share_output),
+                )?;
+                tx.commit()?;
                 Ok((
                     Reply::success(serde_json::json!({"id":id,"state":"consumed"})),
                     Some(Job {
@@ -541,5 +687,76 @@ mod acl_tests {
         assert!(result.unwrap_err().to_string().contains("extended ACL"));
         Broker::check_private_file(&file, owner).unwrap();
         assert!(reject_extended_acl(&dir.path().join("missing")).is_err());
+    }
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+    use std::{cell::Cell, os::unix::fs::PermissionsExt};
+
+    #[test]
+    fn approval_rechecks_time_after_lock_and_before_consumption() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        fs::create_dir(dir.path().join("keys")).unwrap();
+        let key = SigningKey::from_bytes(&[29; 32]);
+        let path = dir.path().join("keys/test.pub");
+        fs::write(&path, hex::encode(key.verifying_key().to_bytes())).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        let uid = unsafe { libc::geteuid() };
+        let mut broker = Broker::open(
+            Config {
+                machine_id: uuid::Uuid::new_v4().to_string(),
+                agent_uid: uid,
+                approver_uid: uid,
+                socket_gid: unsafe { libc::getegid() },
+                state_dir: dir.path().to_path_buf(),
+                socket: dir.path().join("run/socket"),
+                approval_ttl_secs: 300,
+                max_execution_secs: 300,
+            },
+            true,
+        )
+        .unwrap();
+        let fixture: crate::protocol::PendingView =
+            serde_json::from_str(include_str!("../ui/test/fixture.json")).unwrap();
+        let (reply, _) = broker
+            .handle(
+                Request::RequestExecution {
+                    spec: fixture.envelope.spec,
+                },
+                uid,
+                100,
+            )
+            .unwrap();
+        let pending: crate::protocol::PendingView =
+            serde_json::from_value(reply.value().unwrap()).unwrap();
+        let envelope = pending.envelope;
+        let approval = || Request::Approve {
+            id: envelope.id.clone(),
+            key_id: "test".into(),
+            number: envelope.number.clone(),
+            share_output: false,
+            signature: hex::encode(
+                key.sign(&envelope.approval_payload(false).unwrap())
+                    .to_bytes(),
+            ),
+        };
+        for times in [[100, 400, 400], [100, 100, 400], [100, 100, 99]] {
+            let index = Cell::new(0);
+            assert!(broker
+                .handle_with_clock(approval(), uid, || {
+                    let i = index.get();
+                    index.set(i + 1);
+                    times[i.min(2)]
+                })
+                .is_err());
+            assert_eq!(broker.load(&envelope.id).unwrap().1, State::Pending);
+        }
+        let (_, job) = broker.handle(approval(), uid, 101).unwrap();
+        assert!(job.is_some());
+        drop(job);
     }
 }

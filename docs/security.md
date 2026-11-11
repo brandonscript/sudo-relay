@@ -64,12 +64,27 @@ verified in that job’s log. This records that job, not completion of the entir
 against an already-privileged actor, establish protected native-app enrollment,
 or evaluate every filesystem/ACL implementation. Linux behavior is unchanged.
 
-### Key revocation and re-pairing gap
+### Key revocation and re-pairing
 
-Revocation currently removes the public-key file without cancelling pending
-requests. Reinstalling the same key can make an old, unexpired signed approval
-valid again. Key removal is also not serialized with an approval already verifying
-that key. Protected file ownership does not solve either issue. The receipt-only
-disposable test catalogue now includes this unsafe re-pairing control; fixing it
-requires retiring pending approvals and coordinating revocation with consumption.
-Do not treat key-file deletion as an atomic revocation boundary.
+The earlier file-only revocation path left requests pending and allowed the same
+key to revive an old approval after re-pairing. Its unsafe control passed in
+disposable Linux/macOS CI run 42939967725. The regression now requires rejection.
+
+Approval holds a SQLite write transaction from key lookup through consumption.
+Administrative revocation records a durable key-denial marker and cancels all
+pending requests in that same ledger before removing the public-key file. Pairing
+also retires pending requests and keeps the key blocked until its file is durable
+and the enrollment transaction commits. A leftover file after interrupted cleanup
+cannot override the denial marker. Use the administrator CLI; manually copying a
+key file is not a supported pairing/recovery procedure.
+
+Local receipt-only tests cover re-pairing, a recreated leftover key file across
+restart, and eight concurrent approval/revocation races with audit commit ordering.
+They do not establish power-loss/filesystem durability, rollback resistance or
+revocation of an already-consumed execution job. Stop older broker processes
+before upgrading: older binaries do not honor the new ledger markers. Protected
+native enrollment and sponsor revocation remain separate, unfinished boundaries.
+
+Live broker and receipt-verifier transports re-read time after obtaining the
+approval transaction and again before consumption, so transaction wait time does
+not reuse the entry-time expiry check. Deterministic boundary tests pass locally.

@@ -479,7 +479,7 @@ fn protected_p256_enrollment_and_revocation_without_execution() {
     let status: String = db
         .query_row("SELECT state FROM requests", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(status, "pending");
+    assert_eq!(status, "cancelled");
     let consumed: u32 = db
         .query_row(
             "SELECT count(*) FROM audit WHERE event='consumed'",
@@ -488,12 +488,33 @@ fn protected_p256_enrollment_and_revocation_without_execution() {
         )
         .unwrap();
     assert_eq!(consumed, 0);
-    // Known gap: re-pairing the same key can revive a still-pending old approval.
     assert!(enroll(0, "pair-p256", &[&public]).status.success());
-    let (_, job) = broker.handle(approval(), config.approver_uid, 102).unwrap();
-    assert!(
-        job.is_some(),
-        "characterization control must expose the pending-request gap"
-    );
+    assert!(broker.handle(approval(), config.approver_uid, 102).is_err());
+    let (reply, job) = broker
+        .handle(
+            Request::RequestExecution {
+                spec: envelope.spec.clone(),
+            },
+            config.agent_uid,
+            103,
+        )
+        .unwrap();
+    assert!(job.is_none());
+    let fresh: PendingView = serde_json::from_value(reply.value().unwrap()).unwrap();
+    let signature: Signature = key.sign(&fresh.envelope.approval_payload(false).unwrap());
+    let (_, job) = broker
+        .handle(
+            Request::Approve {
+                id: fresh.envelope.id,
+                key_id: "native".into(),
+                number: fresh.envelope.number,
+                share_output: false,
+                signature: hex::encode(signature.to_der()),
+            },
+            config.approver_uid,
+            104,
+        )
+        .unwrap();
+    assert!(job.is_some());
     drop(job); // Receipt-only: never call the executor.
 }

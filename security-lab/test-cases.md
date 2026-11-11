@@ -309,9 +309,30 @@ verify owner/mode/algorithm, and reject replacement. Freeze a request and sign i
 with a disposable software key; removing the key must reject that proof without
 consumption. No broker service or executor is started.
 
-**Known unsafe control:** re-pair the same key and submit the old pending proof.
-The current implementation accepts it. The test deliberately records that behavior
-and drops the returned job; acceptance is not a security pass. Revocation must
-retire pending requests and be coordinated with consumption before this control
-can become a rejection regression. Compilation/lint pass locally; runtime is
-restricted to disposable CI. This does not test sponsor provenance or hardware.
+The original unsafe re-pairing control accepted an old pending proof in disposable
+Linux/macOS CI run 42939967725. It is now a rejection regression: revocation must
+leave that request cancelled; re-pairing still rejects it; a newly created and
+signed request consumes once. Returned jobs are dropped, never executed. The revised
+root case awaits its own CI run; local compilation/lint pass.
+
+Local receipt-only regressions also pass:
+
+- `enrollment_revocation_repair_requires_fresh_request`: old approval rejects after
+  revocation and after re-pairing; a fresh request provides the positive control.
+- `enrollment_interrupted_file_cleanup_cannot_restore_revoked_key`: recreate the
+  leftover key file after a durable denial marker. Approval rejects before/after
+  broker restart; retrying revocation removes the file. This simulates a crash
+  state, not an actual power failure.
+- `enrollment_revocation_and_approval_have_one_commit_order`: race both operations
+  eight times. A successful consumption must precede revocation in the audit;
+  otherwise the request is cancelled without consumption. No executor is called.
+
+These results do not establish sponsor provenance, hardware authentication,
+rollback resistance, or recall of jobs consumed before revocation.
+
+`approval_rechecks_time_after_lock_and_before_consumption` supplies a deterministic
+clock that crosses expiry while acquiring the transaction, crosses expiry after
+verification, or moves before creation before consumption. Each produces no job;
+a valid-time positive control still consumes once. Both live transports use the
+current-clock entry point. This checks decision-time validation, not system clock
+rollback prevention, storage stalls after validation, or physical power loss.

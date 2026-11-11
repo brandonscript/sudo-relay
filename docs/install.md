@@ -90,7 +90,17 @@ Pin the machine UUID in the host adapter. Pairing a host is an administrative tr
 sudo /usr/local/libexec/sudo-relay/broker revoke /etc/sudo-relay/config.json desktop
 ```
 
-Revocation cannot undo a command already consumed or launched. Generate a new host key and pair a new key ID to rotate keys.
+Pairing and revocation cancel all pending requests in that broker, because a
+pending request has not selected an approving key yet. Re-pairing the same key
+requires a fresh request. Revocation records denial in the ledger before deleting
+the key file; retrying revocation is safe if cleanup was interrupted. If pairing
+was interrupted and its file remains, explicitly revoke that ID and pair again.
+Do not copy public-key files manually to recover enrollment.
+
+Revocation cannot undo a command already consumed or launched. Generate a new host
+key and pair a new key ID to rotate keys. Stop older broker processes before
+upgrading the broker and administrator CLI together; older binaries do not enforce
+the new ledger denial markers.
 
 ## Start the service
 

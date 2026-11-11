@@ -143,7 +143,7 @@ pub fn serve(config: Config, development: bool) -> Result<()> {
             shared
                 .lock()
                 .map_err(|_| anyhow::anyhow!("broker state poisoned"))?
-                .handle(request, uid, crate::broker::now())
+                .handle_current(request, uid)
         })();
         let (reply, job) = match result {
             Ok(v) => v,

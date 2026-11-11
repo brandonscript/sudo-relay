@@ -2,7 +2,7 @@
 use anyhow::{ensure, Context, Result};
 use std::io::{BufRead, Read, Write};
 use sudo_relay::{
-    broker::{now, Broker, Config},
+    broker::{Broker, Config},
     protocol::{Reply, Request, MAX_REQUEST_BYTES},
 };
 
@@ -46,7 +46,7 @@ fn main() -> Result<()> {
         ensure!(line.len() <= MAX_REQUEST_BYTES, "request too large");
         let result = serde_json::from_slice::<Request>(&line)
             .map_err(anyhow::Error::from)
-            .and_then(|request| broker.handle(request, uid, now()));
+            .and_then(|request| broker.handle_current(request, uid));
         let (reply, consumed) = match result {
             Ok((reply, job)) => {
                 let consumed = job.is_some();

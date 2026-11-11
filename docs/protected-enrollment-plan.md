@@ -219,3 +219,14 @@ change and restoration between checks is not detected, and policy can change
 after a check but before consumption. Persisted policy epochs, rollback across
 service restart and coordination with the verifier remain open. These checks
 also do not establish sponsor privilege revocation or protect fixture key storage.
+
+### Approval-key changes and consumption
+
+The broker now serializes approval key lookup/verification/consumption against
+administrator pairing and revocation using the same SQLite ledger. Revocation
+records persistent denial before file cleanup; pairing keeps a key blocked until
+its file is durable and enrollment commits. Both retire all pending requests.
+This fixes the old-proof re-pairing gap at the broker layer; local receipt-only
+regressions and the native protocol/ledger check pass. Root CI verification of
+the revised P-256 case remains pending. It does not make XPC peer-policy changes
+atomic with consumption, retire already-consumed jobs, or bind sponsor identity.

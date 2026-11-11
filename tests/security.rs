@@ -928,3 +928,109 @@ fn p256_pairing_is_explicit_validated_and_non_overwriting() {
         paired
     );
 }
+
+#[test]
+fn enrollment_revocation_repair_requires_fresh_request() {
+    let setup = Setup::new();
+    let mut broker = setup.broker();
+    let envelope = setup.request(&mut broker);
+    Broker::revoke_key(&setup.config, true, "test").unwrap();
+    assert!(broker
+        .handle(setup.approval(&envelope), setup.config.approver_uid, 101)
+        .is_err());
+    Broker::pair_key(
+        &setup.config,
+        true,
+        "test",
+        &hex::encode(setup.key.verifying_key().to_bytes()),
+    )
+    .unwrap();
+    assert!(broker
+        .handle(setup.approval(&envelope), setup.config.approver_uid, 102)
+        .is_err());
+    let fresh = setup.request(&mut broker);
+    let (_, job) = broker
+        .handle(setup.approval(&fresh), setup.config.approver_uid, 103)
+        .unwrap();
+    assert!(job.is_some());
+    drop(job);
+}
+
+#[test]
+fn enrollment_interrupted_file_cleanup_cannot_restore_revoked_key() {
+    let setup = Setup::new();
+    let mut broker = setup.broker();
+    Broker::revoke_key(&setup.config, true, "test").unwrap();
+    // Recreate the leftover file from a crash after the durable revocation commit.
+    let keyfile = setup.dir.path().join("keys/test.pub");
+    fs::write(&keyfile, hex::encode(setup.key.verifying_key().to_bytes())).unwrap();
+    fs::set_permissions(&keyfile, fs::Permissions::from_mode(0o600)).unwrap();
+    let envelope = setup.request(&mut broker);
+    assert!(broker
+        .handle(setup.approval(&envelope), setup.config.approver_uid, 101)
+        .err()
+        .unwrap()
+        .to_string()
+        .contains("revoked"));
+    drop(broker);
+    let mut broker = setup.broker();
+    let fresh = setup.request(&mut broker);
+    assert!(broker
+        .handle(setup.approval(&fresh), setup.config.approver_uid, 101)
+        .is_err());
+    // Retrying revocation safely cleans up the leftover file; only explicit re-pairing enables a key.
+    Broker::revoke_key(&setup.config, true, "test").unwrap();
+    assert!(!keyfile.exists());
+}
+
+#[test]
+fn enrollment_revocation_and_approval_have_one_commit_order() {
+    for _ in 0..8 {
+        let setup = Setup::new();
+        let mut broker = setup.broker();
+        let envelope = setup.request(&mut broker);
+        let approval = setup.approval(&envelope);
+        let barrier = std::sync::Barrier::new(2);
+        let accepted = std::thread::scope(|scope| {
+            let barrier = &barrier;
+            let uid = setup.config.approver_uid;
+            let approving = scope.spawn(move || {
+                barrier.wait();
+                match broker.handle(approval, uid, 101) {
+                    Ok((_, job)) => {
+                        let accepted = job.is_some();
+                        drop(job);
+                        accepted
+                    }
+                    Err(_) => false,
+                }
+            });
+            barrier.wait();
+            Broker::revoke_key(&setup.config, true, "test").unwrap();
+            approving.join().unwrap()
+        });
+        let db = rusqlite::Connection::open(setup.dir.path().join("state.sqlite3")).unwrap();
+        let revoked: i64 = db
+            .query_row(
+                "SELECT seq FROM audit WHERE event='key_revoked'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let consumed: Option<i64> = db
+            .query_row(
+                "SELECT min(seq) FROM audit WHERE event='consumed'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(accepted, consumed.is_some());
+        if let Some(consumed) = consumed {
+            assert!(consumed < revoked);
+        }
+        let state: String = db
+            .query_row("SELECT state FROM requests", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(state, if accepted { "consumed" } else { "cancelled" });
+    }
+}

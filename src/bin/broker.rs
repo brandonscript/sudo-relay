@@ -6,8 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use sudo_relay::{
-    approval_key::ApprovalKey,
-    broker::{protected_path, read_protected_file, Config},
+    broker::{protected_path, read_protected_file, Broker, Config},
     protocol::MAX_REQUEST_BYTES,
     transport,
 };
@@ -101,51 +100,21 @@ fn main() -> Result<()> {
         }
         Some("pair" | "pair-p256") if args.len() == 4 => {
             let config = load(Path::new(&args[1]), development)?;
-            validate_key_id(&args[2])?;
             let encoded = if args[0] == "pair-p256" {
                 format!("p256-sha256:{}", args[3].to_ascii_lowercase())
             } else {
                 ensure!(args[3].len() == 64, "expected a 32-byte Ed25519 public key");
                 args[3].to_ascii_lowercase()
             };
-            ApprovalKey::parse(&encoded)?;
-            let keys = config.state_dir.join("keys");
-            if !development {
-                protected_path(&keys, 0)?;
-            }
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(keys.join(format!("{}.pub", args[2])))?;
-            file.write_all(encoded.as_bytes())?;
-            file.sync_all()?;
-            fs::File::open(keys)?.sync_all()?;
+            Broker::pair_key(&config, development, &args[2], &encoded)?;
             println!("Approver paired: {}", args[2]);
         }
         Some("revoke") if args.len() == 3 => {
             let config = load(Path::new(&args[1]), development)?;
-            validate_key_id(&args[2])?;
-            let keys = config.state_dir.join("keys");
-            if !development {
-                protected_path(&keys, 0)?;
-            }
-            fs::remove_file(keys.join(format!("{}.pub", args[2])))?;
-            fs::File::open(keys)?.sync_all()?;
+            Broker::revoke_key(&config, development, &args[2])?;
             println!("Approver revoked: {}", args[2]);
         }
         _ => bail!("invalid arguments; use --help"),
     }
-    Ok(())
-}
-fn validate_key_id(id: &str) -> Result<()> {
-    ensure!(
-        !id.is_empty()
-            && id.len() <= 64
-            && id
-                .bytes()
-                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'),
-        "key id must contain 1..64 letters, digits, hyphens or underscores"
-    );
     Ok(())
 }
