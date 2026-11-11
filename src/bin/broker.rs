@@ -7,7 +7,8 @@ use std::{
 };
 use sudo_relay::{
     approval_key::ApprovalKey,
-    broker::{protected_path, Config},
+    broker::{protected_path, read_protected_file, Config},
+    protocol::MAX_REQUEST_BYTES,
     transport,
 };
 
@@ -23,10 +24,12 @@ Production commands require root. --development requires non-root and never elev
 init refuses existing configuration; serve never runs sudo or reads passwords.
 ";
 fn load(path: &Path, development: bool) -> Result<Config> {
-    if !development {
-        protected_path(path, 0)?;
-    }
-    let config: Config = serde_json::from_slice(&fs::read(path)?)?;
+    let bytes = if development {
+        fs::read(path)?
+    } else {
+        read_protected_file(path, MAX_REQUEST_BYTES)?
+    };
+    let config: Config = serde_json::from_slice(&bytes)?;
     config.validate(development)?;
     Ok(config)
 }

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fs,
+    io::Read,
     os::unix::{
         fs::{MetadataExt, OpenOptionsExt},
         io::AsRawFd,
@@ -94,6 +95,29 @@ pub fn protected_path(path: &Path, owner: u32) -> Result<PathBuf> {
         reject_extended_acl(component)?;
     }
     Ok(resolved)
+}
+
+/// Read a bounded regular file beneath root-controlled ancestors.
+pub fn read_protected_file(path: &Path, max_bytes: usize) -> Result<Vec<u8>> {
+    ensure!(
+        (1..=crate::protocol::MAX_REQUEST_BYTES).contains(&max_bytes),
+        "invalid protected file size limit"
+    );
+    let resolved = protected_path(path, 0)?;
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(resolved)?;
+    let meta = file.metadata()?;
+    ensure!(
+        meta.is_file() && meta.uid() == 0 && meta.mode() & 0o022 == 0,
+        "expected a root-owned regular file without group/world write access"
+    );
+    ensure!(meta.len() <= max_bytes as u64, "protected file too large");
+    let mut bytes = Vec::new();
+    file.take(max_bytes as u64 + 1).read_to_end(&mut bytes)?;
+    ensure!(bytes.len() <= max_bytes, "protected file too large");
+    Ok(bytes)
 }
 
 #[cfg(target_os = "macos")]
@@ -332,10 +356,12 @@ impl Broker {
         );
         let path = self.config.state_dir.join("keys").join(format!("{id}.pub"));
         Self::check_private_file(&path, self.owner)?;
-        if !self.development {
-            protected_path(&path, self.owner)?;
-        }
-        ApprovalKey::parse(&fs::read_to_string(path)?)
+        let bytes = if self.development {
+            fs::read(path)?
+        } else {
+            read_protected_file(&path, 1024)?
+        };
+        ApprovalKey::parse(std::str::from_utf8(&bytes)?)
     }
     pub fn handle(&mut self, req: Request, uid: u32, time: u64) -> Result<(Reply, Option<Job>)> {
         ensure!(

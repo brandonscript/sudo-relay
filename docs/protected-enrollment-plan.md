@@ -168,3 +168,17 @@ in writable lab state. Do not call this administrator-protected pairing.
 The dependency and its transitive graph are locked. This increment is not a full
 cryptographic dependency audit; upstream advisories and release provenance still
 need the release review already listed in the backlog.
+
+### Bounded protected file reads
+
+Production broker configuration and approval public keys now use one bounded
+reader: root-controlled ancestors, a regular root-owned file without group/world
+write access, no-follow opening of the resolved final component, and a size check
+both before and during reading. Limits are 64 KiB for configuration and 1 KiB for
+a public key. macOS retains the conservative rejection of extended ACL entries.
+
+The ordinary-user rejection test and lint checks pass locally. Disposable Linux
+and macOS CI tests cover valid reads, oversized files, directories, FIFOs, writable
+ancestors/files and changed ownership; macOS also covers ACLs. Those root tests
+are not run on the personal machine. This does not implement native enrollment
+or claim atomicity against another root process changing policy while it is read.

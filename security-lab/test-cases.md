@@ -251,3 +251,17 @@ These pass locally. Rust tests supply time to `Broker::handle`; TypeScript tests
 temporarily mock `Date.now`. No system clock changes or command execution occur.
 They do not establish monotonic lifetime enforcement while a rollback remains
 inside the valid interval, nor suspend/resume, snapshot or ledger-restore safety.
+
+## Protected policy-file prerequisites
+
+- `protected_reads_reject_user_owned_policy`: a policy created by the ordinary
+  user must fail the protected reader. Passes locally; no service or command runs.
+- `protected_reads_reject_unsafe_or_unbounded_files`: on disposable root CI only,
+  read an exact-limit valid file; reject an oversized file, invalid limits, a
+  directory, FIFO, writable file/ancestor and non-root owner. No broker is started.
+- `root_owned_paths_reject_acl_writable_ancestors`: on disposable macOS CI only,
+  verify both path checking and bounded reading reject an ACL on the file or its
+  parent, then accept again after that fixture ACL is removed.
+
+Root-only cases are not personal-machine verification. Root-concurrent file
+replacement and native enrollment policy integration remain separate work.

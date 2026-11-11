@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 use sudo_relay::{
-    broker::{protected_path, Config},
+    broker::{protected_path, read_protected_file, Config},
     protocol::{Command, PendingView, Request, Spec},
     transport,
 };
@@ -267,6 +267,7 @@ fn root_owned_paths_reject_acl_writable_ancestors() {
             .unwrap()
             .success());
         let result = protected_path(&file, 0);
+        let read_result = read_protected_file(&file, 1024);
         assert!(Process::new("/bin/chmod")
             .arg("-N")
             .arg(target)
@@ -274,6 +275,59 @@ fn root_owned_paths_reject_acl_writable_ancestors() {
             .unwrap()
             .success());
         assert!(result.unwrap_err().to_string().contains("extended ACL"));
+        assert!(read_result
+            .unwrap_err()
+            .to_string()
+            .contains("extended ACL"));
         protected_path(&file, 0).unwrap();
     }
+}
+
+#[test]
+#[ignore = "root only; run in disposable CI machines"]
+fn protected_reads_reject_unsafe_or_unbounded_files() {
+    assert_eq!(unsafe { libc::geteuid() }, 0);
+    let parent = if cfg!(target_os = "macos") {
+        "/private/var"
+    } else {
+        "/var/lib"
+    };
+    let dir = PathBuf::from(parent).join(format!("sudo-relay-read-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&dir).unwrap();
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+    let _cleanup = Cleanup {
+        dir: dir.clone(),
+        child: None,
+    };
+    let file = dir.join("policy");
+    fs::write(&file, b"test policy").unwrap();
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(read_protected_file(&file, 11).unwrap(), b"test policy");
+    assert!(read_protected_file(&file, 10).is_err());
+    assert!(read_protected_file(&file, 0).is_err());
+    assert!(read_protected_file(&file, usize::MAX).is_err());
+    assert!(read_protected_file(&dir, 1024).is_err());
+    for target in [&dir, &file] {
+        fs::set_permissions(target, fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(read_protected_file(&file, 1024).is_err());
+        fs::set_permissions(target, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let fifo = dir.join("fifo");
+    let fifo_c = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(fifo_c.as_ptr(), 0o600) }, 0);
+    assert!(read_protected_file(&fifo, 1024).is_err());
+    let file_c = std::ffi::CString::new(file.as_os_str().as_encoded_bytes()).unwrap();
+    assert_eq!(unsafe { libc::chown(file_c.as_ptr(), 10001, 10001) }, 0);
+    assert!(read_protected_file(&file, 1024).is_err());
+}
+
+#[test]
+fn protected_reads_reject_user_owned_policy() {
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("policy");
+    fs::write(&file, b"test policy").unwrap();
+    assert!(read_protected_file(&file, 1024).is_err());
 }
