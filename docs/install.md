@@ -44,9 +44,29 @@ This creates a private state directory, a public socket directory, and a machine
 
 ## Choose the approval window
 
-The root-owned JSON configuration supports `"approval_ttl_secs": 300`. Omitted values default to five minutes for existing configurations. Set it to a whole number from 1 to 86,400 seconds (one day), then restart the broker. Expiry cannot be disabled or changed by an MCP request. Restart cancels pending requests; the new window applies to newly created requests. The execution timeout is separate and remains capped at 300 seconds.
+The root-owned JSON configuration supports `"approval_ttl_secs": 300`. Omitted values default to five minutes for existing configurations. Set it to a whole number from 1 to 86,400 seconds (one day), then restart the broker. Expiry cannot be disabled or changed by an MCP request. Restart cancels pending requests; the new window applies to newly created requests. The execution timeout is separate; see below.
 
 The card displays the remaining time from the signed expiry, not a fixed five-minute label.
+
+## Choose the execution limit
+
+`"max_execution_secs": 300` keeps the existing five-minute maximum. An
+administrator can set it from 1 to 86,400 seconds, then restart the broker; for
+example, `3600` allows requests up to one hour. Omitted values remain 300.
+Restart cancels pending requests, so changed policy applies to fresh reviews.
+
+Each request supplies `timeout_secs` (default 300), bounded by this maximum.
+The broker rejects an excessive duration rather than silently shortening it,
+and checks the limit again before consuming an approval. The exact duration is
+signed and shown under execution details, not in the header. Changing it needs
+a new request and approval. Approval expiry still controls when approval can be
+given; it does not shorten an already approved command's runtime.
+
+Update the broker and adapter together before using limits above five minutes;
+older adapters reject those requests. The separate native receipt fixture still
+uses a fixed 30-second example and executes nothing. Longer-duration authorization
+has automated coverage; a real hour-long process and its cleanup have not been
+tested as part of this change.
 
 ## Pair an approving host
 

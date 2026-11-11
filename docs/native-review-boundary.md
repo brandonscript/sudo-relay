@@ -71,9 +71,9 @@ Passkeys remain optional. The session-only mode continues to attest an authentic
 
 ## Execution-timeout follow-up
 
-Approval expiry is the deadline to authorize a request; it does not determine how long a launched command may run. The existing broker already accepts a signed per-request `timeout_secs`, with a hard-coded 1–300 second range and a 300-second default. This native fixture fixes that value to 30 seconds and never executes. The main review now omits it at the participant's request; Details retains it.
+Approval expiry is the deadline to authorize a request; it does not determine how long a launched command may run. The broker accepts signed per-request `timeout_secs`. It now has an administrator-configured `max_execution_secs` (default 300, range 1–86,400), while omitted request durations still default to 300. This native fixture fixes that value to 30 seconds and never executes. The main review now omits it at the participant's request; Details retains it.
 
-For long-running work, evaluate a separately configured administrator maximum and a per-request duration bounded by it. Keep the chosen value in the frozen/signed request, require fresh approval to change it, and test runtime limits independently from approval expiry. No production timeout limit was changed in this work.
+The broker and adapter now accept longer signed durations within administrator policy. Authorization-only tests cover limits, changed signatures, backward-compatible defaults and separate approval expiry. The default is unchanged. Actual long-duration process cleanup remains unverified; this native receipt fixture is unchanged.
 
 The native and inline receipt fixtures now display `local-receipt-lab · <actual OS version> · test-user`; the account is explicitly a fixture identity. Production sponsor enrollment remains absent. OS/account fields are frozen into the respective native signed request or inline probe digest; this display work does not establish installation provenance.
 

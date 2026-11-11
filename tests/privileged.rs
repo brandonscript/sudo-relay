@@ -92,6 +92,7 @@ fn root_broker_enforces_identity_and_protected_paths() {
         approver_uid: 10002,
         socket_gid: 10001,
         approval_ttl_secs: 300,
+        max_execution_secs: 300,
         state_dir: state,
         socket: dir.join("broker.sock"),
     };

@@ -58,6 +58,8 @@ rejection, removes that fixture ACL and verifies acceptance again. Missing files
 also fail. No personal authentication files are touched.
 
 A root-only CI test separately checks an ACL on a protected file and on its
-ancestor directory. Its result is pending. These checks do not eliminate races
+ancestor directory. The named test passed in the macOS privileged job of
+[CI run 42930988690](https://github.com/brandonscript/sudo-relay/actions/runs/42930988690),
+verified in that job’s log. This records that job, not completion of the entire run. These checks do not eliminate races
 against an already-privileged actor, establish protected native-app enrollment,
 or evaluate every filesystem/ACL implementation. Linux behavior is unchanged.

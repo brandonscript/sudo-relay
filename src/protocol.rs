@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
+pub const MAX_EXECUTION_TIMEOUT_SECS: u64 = 86_400;
 pub const MAX_REQUEST_BYTES: usize = 65_536;
 pub const MAX_SPEC_BYTES: usize = 16_384;
 pub const DOMAIN: &str = "sudo-relay/request/v2";
@@ -47,8 +48,8 @@ impl Spec {
             "request exceeds 16 KiB review limit"
         );
         ensure!(
-            (1..=300).contains(&self.timeout_secs),
-            "timeout must be 1..300 seconds"
+            (1..=MAX_EXECUTION_TIMEOUT_SECS).contains(&self.timeout_secs),
+            "timeout must be 1..86400 seconds"
         );
         ensure!(
             safe_text(&self.reason),

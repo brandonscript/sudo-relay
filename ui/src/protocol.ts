@@ -53,7 +53,7 @@ export function parsePending(value: unknown): Pending {
     created_at: integer(raw.created_at), expires_at: integer(raw.expires_at), number: string(raw.number),
     spec: { command: parsedCommand, env, reason: string(spec.reason), timeout_secs: integer(spec.timeout_secs), output_needed: boolean(spec.output_needed) } };
   if (!/^[1-9][0-9]$/.test(envelope.number)) throw new Error('Invalid confirmation number');
-  if (envelope.expires_at <= envelope.created_at || envelope.spec.timeout_secs < 1 || envelope.spec.timeout_secs > 300) throw new Error('Invalid request limits');
+  if (envelope.expires_at <= envelope.created_at || envelope.spec.timeout_secs < 1 || envelope.spec.timeout_secs > 86400) throw new Error('Invalid request limits');
   const result = { envelope, signing_payload: string(pending.signing_payload), digest: string(pending.digest) };
   if (result.signing_payload !== hex(payload(envelope))) throw new Error('Signing payload does not match displayed request');
   if (!/^[0-9a-f]{64}$/.test(result.digest)) throw new Error('Invalid request digest');

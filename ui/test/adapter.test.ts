@@ -63,3 +63,22 @@ test('Rust fixture matches request and both signed decisions',()=>{
     assert.throws(()=>parsePending(invalidHint),/boolean/);
   }
 });
+
+test('long execution limits remain bounded, signed and separate from approval expiry', async () => {
+  for (const timeout of [1, 300, 3600, 86400]) {
+    const value = pending();
+    value.envelope.spec.timeout_secs = timeout;
+    value.signing_payload = hex(payload(value.envelope));
+    value.digest = createHash('sha256').update(payload(value.envelope)).digest('hex');
+    assert.equal((await verifyPending(value, now)).envelope.spec.timeout_secs, timeout);
+    await assert.rejects(verifyPending(value, now + 300), /expired/);
+    value.envelope.spec.timeout_secs += 1;
+    assert.throws(() => parsePending(value), /payload|limits/);
+  }
+  for (const timeout of [0, 86401, Number.MAX_SAFE_INTEGER]) {
+    const value = pending();
+    value.envelope.spec.timeout_secs = timeout;
+    value.signing_payload = hex(payload(value.envelope));
+    assert.throws(() => parsePending(value), /limits/);
+  }
+});

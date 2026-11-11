@@ -55,6 +55,7 @@ fn main() -> Result<()> {
                 approver_uid: args[5].parse()?,
                 socket_gid: args[6].parse()?,
                 approval_ttl_secs: 300,
+                max_execution_secs: 300,
             };
             config.validate(development)?;
             for (dir, mode) in [

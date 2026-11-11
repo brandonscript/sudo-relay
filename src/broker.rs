@@ -1,5 +1,5 @@
 use crate::execution::{self, Outcome};
-use crate::protocol::{Envelope, Reply, Request};
+use crate::protocol::{Envelope, Reply, Request, MAX_EXECUTION_TIMEOUT_SECS};
 use anyhow::{ensure, Context, Result};
 use ed25519_dalek::{Signature, VerifyingKey};
 use rusqlite::{params, Connection};
@@ -26,8 +26,14 @@ pub struct Config {
     pub socket: PathBuf,
     #[serde(default = "default_approval_ttl_secs")]
     pub approval_ttl_secs: u64,
+    #[serde(default = "default_max_execution_secs")]
+    pub max_execution_secs: u64,
 }
 pub fn default_approval_ttl_secs() -> u64 {
+    300
+}
+
+pub fn default_max_execution_secs() -> u64 {
     300
 }
 
@@ -36,6 +42,10 @@ impl Config {
         ensure!(
             (1..=86_400).contains(&self.approval_ttl_secs),
             "approval_ttl_secs must be 1..86400 seconds"
+        );
+        ensure!(
+            (1..=MAX_EXECUTION_TIMEOUT_SECS).contains(&self.max_execution_secs),
+            "max_execution_secs must be 1..86400 seconds"
         );
         ensure!(
             uuid::Uuid::parse_str(&self.machine_id).is_ok(),
@@ -343,6 +353,10 @@ impl Broker {
                     .query_row("SELECT COUNT(*) FROM requests", [], |r| r.get(0))?;
                 ensure!(total < 10_000, "audit capacity reached; administrator must archive and rotate the broker state");
                 spec.validate()?;
+                ensure!(
+                    spec.timeout_secs <= self.config.max_execution_secs,
+                    "execution timeout exceeds administrator maximum"
+                );
                 execution::validate_executable(&spec, self.development)?;
                 if let crate::protocol::Command::Argv { argv } = &mut spec.command {
                     argv[0] = fs::canonicalize(&argv[0])?
@@ -407,6 +421,10 @@ impl Broker {
                 ensure!(
                     state == State::Pending && time < env.expires_at,
                     "request is not pending"
+                );
+                ensure!(
+                    env.spec.timeout_secs <= self.config.max_execution_secs,
+                    "execution timeout exceeds administrator maximum"
                 );
                 let key = self.key(&key_id)?;
                 let signature = Signature::from_slice(&hex::decode(signature)?)?;

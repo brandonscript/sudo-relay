@@ -34,6 +34,7 @@ impl Setup {
                 approver_uid: uid,
                 socket_gid: unsafe { libc::getegid() },
                 approval_ttl_secs: 300,
+                max_execution_secs: 300,
                 state_dir: dir.path().into(),
                 socket: dir.path().join("socket-dir/socket"),
             },
@@ -682,4 +683,73 @@ fn old_ledger_gets_withholding_default() {
         .value()
         .unwrap();
     assert_eq!(status["output_shared"], false);
+}
+
+#[test]
+fn execution_limit_is_admin_bounded_signed_and_independent_of_approval_expiry() {
+    for maximum in [1, 300, 3600, 86_400] {
+        let mut setup = Setup::new();
+        setup.config.max_execution_secs = maximum;
+        let mut broker = setup.broker();
+        let mut request = spec();
+        request.timeout_secs = maximum + 1;
+        assert!(broker
+            .handle(
+                Request::RequestExecution {
+                    spec: request.clone()
+                },
+                setup.config.agent_uid,
+                100
+            )
+            .is_err());
+        request.timeout_secs = maximum;
+        let (reply, job) = broker
+            .handle(
+                Request::RequestExecution { spec: request },
+                setup.config.agent_uid,
+                100,
+            )
+            .unwrap();
+        assert!(job.is_none());
+        let envelope = serde_json::from_value::<PendingView>(reply.value().unwrap())
+            .unwrap()
+            .envelope;
+        assert_eq!(envelope.spec.timeout_secs, maximum);
+        assert_eq!(envelope.expires_at, 400);
+        let mut changed = envelope.clone();
+        changed.spec.timeout_secs += 1;
+        assert!(broker
+            .handle(setup.approval(&changed), setup.config.approver_uid, 101)
+            .is_err());
+        if maximum > 1 {
+            broker.config.max_execution_secs = maximum - 1;
+            assert!(broker
+                .handle(setup.approval(&envelope), setup.config.approver_uid, 101)
+                .is_err());
+            assert_eq!(
+                state(&mut broker, &envelope.id, setup.config.agent_uid, 101),
+                "pending"
+            );
+            broker.config.max_execution_secs = maximum;
+        }
+        let (_, job) = broker
+            .handle(setup.approval(&envelope), setup.config.approver_uid, 101)
+            .unwrap();
+        // Inspect the frozen limit without invoking the executor.
+        assert_eq!(job.unwrap().envelope.spec.timeout_secs, maximum);
+    }
+}
+
+#[test]
+fn execution_limit_configuration_preserves_old_defaults_and_rejects_unbounded_values() {
+    let setup = Setup::new();
+    let mut value = serde_json::to_value(&setup.config).unwrap();
+    value.as_object_mut().unwrap().remove("max_execution_secs");
+    let mut config: Config = serde_json::from_value(value).unwrap();
+    assert_eq!(config.max_execution_secs, 300);
+    config.validate(true).unwrap();
+    for maximum in [0, 86_401, u64::MAX] {
+        config.max_execution_secs = maximum;
+        assert!(config.validate(true).is_err());
+    }
 }
