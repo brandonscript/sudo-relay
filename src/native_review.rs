@@ -688,6 +688,14 @@ mod tests {
 
     #[test]
     fn native_fetch_rejects_invalid_references_without_output() {
+        assert_eq!(
+            unsafe { sudo_relay_cancel_receipt(std::ptr::null(), 1) },
+            -1
+        );
+        assert_eq!(
+            unsafe { sudo_relay_cancel_receipt(b"x".as_ptr(), 4097) },
+            -1
+        );
         for input in [
             b"null".as_slice(),
             br#"{"enrollment":"relative","id":"request"}"#,

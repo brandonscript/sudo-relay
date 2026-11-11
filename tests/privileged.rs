@@ -654,15 +654,6 @@ fn protected_receipt_socket_roundtrip(config: &Config) {
         "native_request",
         Some(pending.to_str().unwrap()),
     );
-    let id: String = serde_json::from_slice(&fs::read(&pending).unwrap()).unwrap();
-    probe(config, config.agent_uid, "native_agent_approve", Some(&id));
-    probe(config, config.approver_uid, "native_receipt", Some(&id));
-    probe(
-        config,
-        config.agent_uid,
-        "native_request",
-        Some(pending.to_str().unwrap()),
-    );
     let cancelled_id: String = serde_json::from_slice(&fs::read(&pending).unwrap()).unwrap();
     probe(
         config,
@@ -670,6 +661,16 @@ fn protected_receipt_socket_roundtrip(config: &Config) {
         "native_cancel",
         Some(&cancelled_id),
     );
+    // Consumed receipts deliberately block new work; exercise cancellation first.
+    probe(
+        config,
+        config.agent_uid,
+        "native_request",
+        Some(pending.to_str().unwrap()),
+    );
+    let id: String = serde_json::from_slice(&fs::read(&pending).unwrap()).unwrap();
+    probe(config, config.agent_uid, "native_agent_approve", Some(&id));
+    probe(config, config.approver_uid, "native_receipt", Some(&id));
     probe(config, 10003, "foreign", None);
     assert!(transport::call_protected(&config.socket, &Request::ExecutionStatus { id }).is_err());
     assert!(!run.join("must-not-exist").exists());
@@ -750,6 +751,15 @@ fn native_receipt_peer(config: &Config) {
             assert!(rejected.stdout.is_empty());
         }
 
+        let reference = serde_json::to_vec(&serde_json::json!({
+            "enrollment": run.join("enrollment.json"), "id": argument,
+        }))
+        .unwrap();
+        assert_eq!(
+            unsafe { sudo_relay_cancel_receipt(reference.as_ptr(), reference.len()) },
+            -1,
+            "agent used native approver cancellation"
+        );
         let (count, output) = fetch(&argument, "enrollment.json", 65536);
         assert_eq!(count, -1, "agent must not use approver enrollment");
         assert!(output.iter().all(|byte| *byte == 0xaa));

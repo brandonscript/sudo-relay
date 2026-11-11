@@ -45,6 +45,19 @@ struct ProtectedReviewCheck {
             }
             throw ReviewError.invalidRequest
         } catch ReviewError.invalidAuthority { }
+        let cancelledSigning = try ProtectedReceiptDecision(enrollment: enrollment, requestID: review.requestID)
+        do {
+            try cancelledSigning.approve(publicKey: key.publicKey, shareOutput: false) { _ in
+                throw CocoaError(.userCancelled)
+            }
+            throw ReviewError.invalidRequest
+        } catch let error as CocoaError where error.code == .userCancelled { }
+        do {
+            try cancelledSigning.approve(publicKey: key.publicKey, shareOutput: false) { _ in
+                preconditionFailure("Cancelled signing retried")
+            }
+            throw ReviewError.invalidRequest
+        } catch ReviewError.alreadyDecided { }
         let expiredDuringSigning = try ProtectedReceiptDecision(enrollment: enrollment, requestID: review.requestID)
         var checks = 0
         var signatures = 0
