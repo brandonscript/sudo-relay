@@ -244,3 +244,12 @@ a fresh fixture rather than replacing it or keeping a private signing key.
 This remains self-enrollment in an agent-writable fixture. It is not production
 pairing, a protected installation, or proof that the reviewing app cannot be
 compromised. No actual sudo command or personal authentication policy is changed.
+
+### Peer-policy source
+
+Fixture bundles explicitly set `SudoRelayReceiptFixture` in their sealed metadata.
+A configured `SudoRelayProtectedPeerPolicyPath` takes precedence and must name a
+root-protected regular file of at most 4096 bytes; failure never falls back to the
+fixture file. Client and service use the same reader. This protects loading of
+peer code requirements when deployed with protected bundles; it does not turn the
+same-user test key enrollment or receipt ledger into protected production state.

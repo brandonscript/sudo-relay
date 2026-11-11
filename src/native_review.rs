@@ -1,8 +1,39 @@
-//! Parsing/encoding bridge only: it neither authenticates the sender nor signs approvals.
+//! Native review and protected policy reading; never signs approvals.
 use crate::protocol::{Envelope, MAX_REQUEST_BYTES};
 use anyhow::{ensure, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+/// Read at most 4096 bytes from a root-protected policy file.
+/// Returns byte count, -1 on invalid/unprotected input, -2 for insufficient capacity.
+///
+/// # Safety
+/// Path must reference path_len readable bytes; output must reference capacity writable
+/// bytes disjoint from path. Errors leave output unchanged.
+#[no_mangle]
+pub unsafe extern "C" fn sudo_relay_read_peer_policy(
+    path: *const u8,
+    path_len: usize,
+    output: *mut u8,
+    capacity: usize,
+) -> isize {
+    if path.is_null() || output.is_null() || path_len == 0 || path_len > 4096 {
+        return -1;
+    }
+    let result = std::panic::catch_unwind(|| {
+        let bytes = unsafe { std::slice::from_raw_parts(path, path_len) };
+        let path = std::str::from_utf8(bytes)?;
+        crate::broker::read_protected_file(std::path::Path::new(path), 4096)
+    });
+    match result {
+        Ok(Ok(bytes)) if bytes.len() <= capacity => {
+            unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), output, bytes.len()) };
+            bytes.len() as isize
+        }
+        Ok(Ok(_)) => -2,
+        _ => -1,
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -122,6 +153,35 @@ pub unsafe extern "C" fn sudo_relay_prepare_review(
 mod tests {
     use super::*;
     use serde_json::{json, Value};
+
+    #[test]
+    fn native_policy_errors_leave_output_untouched() {
+        let mut output = [0xaa; 32];
+        for path in [
+            b"".as_slice(),
+            b"relative/policy",
+            b"/missing-policy\0",
+            &[0xff],
+        ] {
+            let result = unsafe {
+                sudo_relay_read_peer_policy(
+                    path.as_ptr(),
+                    path.len(),
+                    output.as_mut_ptr(),
+                    output.len(),
+                )
+            };
+            assert_eq!(result, -1);
+            assert_eq!(output, [0xaa; 32]);
+        }
+        assert_eq!(
+            unsafe {
+                sudo_relay_read_peer_policy(std::ptr::null(), 1, output.as_mut_ptr(), output.len())
+            },
+            -1
+        );
+        assert_eq!(output, [0xaa; 32]);
+    }
 
     fn fixture() -> Value {
         let mut value: Value =

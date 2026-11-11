@@ -30,6 +30,35 @@ func unhex(_ value: String) -> Data {
     })
 }
 
+func checkPeerPolicyBoundary() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let policy = Data(#"{"client":"identifier \"test-client\"","service":"identifier \"test-service\""}"#.utf8)
+    try policy.write(to: root.appendingPathComponent("policy.json"))
+    func bundle(_ settings: [String: Any]) throws -> Bundle {
+        let path = root.appendingPathComponent(UUID().uuidString + ".bundle")
+        try FileManager.default.createDirectory(at: path.appendingPathComponent("Contents"), withIntermediateDirectories: true)
+        var info = settings
+        info["CFBundleIdentifier"] = UUID().uuidString
+        let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+        try data.write(to: path.appendingPathComponent("Contents/Info.plist"))
+        return Bundle(url: path)!
+    }
+    let fixture = try bundle(["SudoRelayReceiptFixture": true])
+    let loaded = try PeerPolicy.load(from: root, bundle: fixture)
+    precondition(loaded.client == "identifier \"test-client\"")
+    for settings: [String: Any] in [[:],
+        ["SudoRelayReceiptFixture": true, "SudoRelayProtectedPeerPolicyPath": root.appendingPathComponent("policy.json").path],
+        ["SudoRelayReceiptFixture": true, "SudoRelayProtectedPeerPolicyPath": root.appendingPathComponent("missing").path],
+        ["SudoRelayReceiptFixture": true, "SudoRelayProtectedPeerPolicyPath": 123]] {
+        do {
+            _ = try PeerPolicy.load(from: root, bundle: bundle(settings))
+            preconditionFailure("Unprotected policy or fallback accepted")
+        } catch ReviewError.invalidAuthority { }
+    }
+}
+
 @main
 @MainActor
 struct Check {
@@ -92,6 +121,7 @@ struct Check {
                 machineName: "same-label", operatingSystem: "macOS test", account: "test-user", now: 1700000001)
             preconditionFailure("wrong machine accepted")
         } catch ReviewError.invalidRequest { }
+        try checkPeerPolicyBoundary()
         try checkDurableReceipt(root: root)
         let accepted: [String: Any] = ["receipt_only": true, "commands_executed": 0, "approval_consumed": true,
             "reply": ["ok": true, "value": ["id": "expected", "state": "consumed"]]]

@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import ReviewCore
 
 // Receipt-only transport and proof verification; no command runner or human approval.
 @objc(SudoRelayPeerReceiptProtocol)
@@ -18,8 +19,26 @@ struct PeerPolicy: Decodable {
     let service: String
     let verifier: String?
 
-    static func load(from root: URL) throws -> PeerPolicy {
-        let data = try Data(contentsOf: root.appendingPathComponent("policy.json"))
+    static func load(from root: URL, bundle: Bundle = .main) throws -> PeerPolicy {
+        let data: Data
+        if let setting = bundle.object(forInfoDictionaryKey: "SudoRelayProtectedPeerPolicyPath") {
+            guard let path = setting as? String else { throw ReviewError.invalidAuthority }
+            let pathBytes = Array(path.utf8)
+            var output = [UInt8](repeating: 0, count: 4096)
+            let count = pathBytes.withUnsafeBufferPointer { input in
+                output.withUnsafeMutableBufferPointer { buffer in
+                    sudo_relay_read_peer_policy(input.baseAddress, input.count, buffer.baseAddress, buffer.count)
+                }
+            }
+            guard count > 0 else { throw ReviewError.invalidAuthority }
+            data = Data(output.prefix(count))
+        } else {
+            // Receipt-only fixtures self-enroll; this is not production pairing.
+            guard bundle.object(forInfoDictionaryKey: "SudoRelayReceiptFixture") as? Bool == true else {
+                throw ReviewError.invalidAuthority
+            }
+            data = try Data(contentsOf: root.appendingPathComponent("policy.json"))
+        }
         guard data.count <= 4096 else { throw NSError(domain: "PeerLab", code: 1) }
         let policy = try JSONDecoder().decode(Self.self, from: data)
         for value in [policy.client, policy.service] + [policy.verifier].compactMap({ $0 }) {

@@ -265,3 +265,18 @@ inside the valid interval, nor suspend/resume, snapshot or ledger-restore safety
 
 Root-only cases are not personal-machine verification. Root-concurrent file
 replacement and native enrollment policy integration remain separate work.
+
+### Native peer-policy loading
+
+- A bundle explicitly marked `SudoRelayReceiptFixture` loads the disposable policy.
+- An unmarked bundle with no protected path rejects that same file.
+- A protected path that is missing, wrong-typed or points to the user-owned fixture
+  rejects, even if the fixture marker and valid fixture policy are also present.
+- The C bridge leaves output unchanged for invalid paths and insufficient capacity;
+  a valid protected read returns only the file bytes and leaves the buffer tail
+  unchanged. Positive protected reads run only in disposable root CI.
+
+Swift negative/fixture controls, Rust invalid-path tests and all thirteen XPC cases
+pass locally. The earlier protected-reader root cases passed Linux/macOS CI run
+42938600587; the newly added C ABI positive controls await their own CI run.
+No protected native enrollment or hardware approval is established by these tests.

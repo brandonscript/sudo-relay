@@ -303,6 +303,35 @@ fn protected_reads_reject_unsafe_or_unbounded_files() {
     fs::write(&file, b"test policy").unwrap();
     fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
     assert_eq!(read_protected_file(&file, 11).unwrap(), b"test policy");
+    // Exercise the same C ABI used by the unprivileged Swift policy loader.
+    unsafe extern "C" {
+        fn sudo_relay_read_peer_policy(
+            path: *const u8,
+            path_len: usize,
+            output: *mut u8,
+            capacity: usize,
+        ) -> isize;
+    }
+    let path = file.as_os_str().as_encoded_bytes();
+    let mut output = [0xaa; 32];
+    assert_eq!(
+        unsafe { sudo_relay_read_peer_policy(path.as_ptr(), path.len(), output.as_mut_ptr(), 10) },
+        -2
+    );
+    assert_eq!(output, [0xaa; 32]);
+    assert_eq!(
+        unsafe {
+            sudo_relay_read_peer_policy(
+                path.as_ptr(),
+                path.len(),
+                output.as_mut_ptr(),
+                output.len(),
+            )
+        },
+        11
+    );
+    assert_eq!(&output[..11], b"test policy");
+    assert_eq!(&output[11..], &[0xaa; 21]);
     assert!(read_protected_file(&file, 10).is_err());
     assert!(read_protected_file(&file, 0).is_err());
     assert!(read_protected_file(&file, usize::MAX).is_err());

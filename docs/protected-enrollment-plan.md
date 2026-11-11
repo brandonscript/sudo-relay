@@ -178,7 +178,24 @@ both before and during reading. Limits are 64 KiB for configuration and 1 KiB fo
 a public key. macOS retains the conservative rejection of extended ACL entries.
 
 The ordinary-user rejection test and lint checks pass locally. Disposable Linux
-and macOS CI tests cover valid reads, oversized files, directories, FIFOs, writable
-ancestors/files and changed ownership; macOS also covers ACLs. Those root tests
+and macOS CI run 42938600587 passed valid reads, oversized files, directories, FIFOs,
+writable ancestors/files and changed ownership; macOS also covered ACLs. Those root tests
 are not run on the personal machine. This does not implement native enrollment
 or claim atomicity against another root process changing policy while it is read.
+
+The native client and XPC service now read `SudoRelayProtectedPeerPolicyPath` from
+their bundle metadata when present. That path goes through the same root-protected
+reader via a bounded C bridge. Missing, invalid or unprotected policy fails closed,
+even when a valid fixture policy is available beside the app. Without that setting,
+only bundles explicitly marked `SudoRelayReceiptFixture` may use fixture policy.
+Both settings are sealed by the fixture's code signature. Protected deployment
+must enforce the authorized bundle identity; an attacker who can substitute the
+trusted binary is outside what this loader alone protects.
+
+Local checks cover the explicit fixture positive control, absent configuration,
+wrong-typed path, missing file and user-owned policy rejection without fallback.
+The thirteen XPC cases still pass. C-bridge successful read/buffer-bound checks
+are added to disposable root CI; local error-path checks verify untouched buffers.
+This policy contains peer code requirements only. It does not protect the lab's
+self-enrolled approving key or broker state, bind sponsor provenance, or constitute
+a supported production installation. Those remain required work.

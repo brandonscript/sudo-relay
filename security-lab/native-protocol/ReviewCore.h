@@ -1,6 +1,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Root-controlled regular file, at most 4096 bytes; errors leave output unchanged.
+// Returns byte count, -1 invalid/unprotected input, -2 insufficient capacity.
+intptr_t sudo_relay_read_peer_policy(const uint8_t *path, size_t path_len,
+    uint8_t *output, size_t capacity);
+
 // Returns byte count, -1 invalid input, -2 insufficient capacity; errors write nothing.
 // Caller owns all buffers. Authenticate the request source before calling.
 intptr_t sudo_relay_prepare_review(const uint8_t *input, size_t input_len,

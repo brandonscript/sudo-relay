@@ -63,20 +63,21 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
         binary = bundle / "Contents/MacOS" / role
         binary.parent.mkdir(parents=True)
         extras = [str(SOURCE.parent / "native-protocol/ReceiptPipe.swift")] if role == "Service" else [
-            str(SOURCE.parent / "native-protocol/BrokerReview.swift"), str(SOURCE / "DurableClient.swift"),
-            "-I", str(SOURCE.parent / "native-protocol"), "-L", str(repo / "target/debug"), "-lsudo_relay",
-            "-framework", "Security", "-framework", "SystemConfiguration", "-liconv"]
+            str(SOURCE.parent / "native-protocol/BrokerReview.swift"), str(SOURCE / "DurableClient.swift")]
         run("/usr/bin/xcrun", "swiftc", "-swift-version", "6", "-parse-as-library", "-warnings-as-errors",
             "-module-cache-path", str(root / "modules"), str(SOURCE / "Shared.swift"),
             str(SOURCE.parent / "touch-id/Sources/ApprovalProbe/ReviewBoundary.swift"),
-            str(SOURCE / f"{role}.swift"), *extras, "-o", str(binary))
+            str(SOURCE / f"{role}.swift"), *extras,
+            "-I", str(SOURCE.parent / "native-protocol"), "-L", str(repo / "target/debug"), "-lsudo_relay",
+            "-framework", "Security", "-framework", "SystemConfiguration", "-liconv", "-o", str(binary))
         if role == "Service":
             child = bundle / "Contents/Helpers/receipt-verifier"
             child.parent.mkdir(parents=True)
             shutil.copy2(repo / "target/debug/receipt-verifier", child)
             sign(child)
         info: dict[str, object] = {"CFBundleExecutable": role, "CFBundleIdentifier": identifier,
-                                  "CFBundleName": role, "CFBundlePackageType": kind, "CFBundleVersion": "1"}
+                                  "CFBundleName": role, "CFBundlePackageType": kind, "CFBundleVersion": "1",
+                                  "SudoRelayReceiptFixture": True}
         if role == "Service":
             info["XPCService"] = {"ServiceType": "Application"}
         write_plist(bundle / "Contents/Info.plist", info)
@@ -178,11 +179,11 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
         app = Path(packaged.stdout.strip())
         assert app.is_dir() and app.name == "sudo-relay lab.app"
         shutil.copytree(helper, app / helper_relative)
+        info_path = app / "Contents/Info.plist"
+        info = plistlib.loads(info_path.read_bytes())
+        info["SudoRelayReceiptFixture"] = True
         if sys.argv[1:] == ["--prepare-native-durable"]:
-            info_path = app / "Contents/Info.plist"
-            info = plistlib.loads(info_path.read_bytes())
             info["SudoRelayLabProtocol"] = "broker-cbor-v2"
-            write_plist(info_path, info)
             state = app.parent / "state"
             state.mkdir(mode=0o700)
             (state / "keys").mkdir(mode=0o700)
@@ -190,6 +191,7 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
                 "machine_id": str(uuid.uuid4()), "agent_uid": os.getuid(), "approver_uid": os.getuid(),
                 "socket_gid": os.getgid(), "state_dir": str(state), "socket": str(app.parent / "unused.sock"),
             }))
+        write_plist(info_path, info)
         sign(app)
         run("/usr/bin/codesign", "--verify", "--deep", "--strict", str(app))
         (app.parent / "policy.json").write_text(json.dumps({
