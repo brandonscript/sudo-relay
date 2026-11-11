@@ -123,44 +123,48 @@ struct ReceiptSubmission {
 
 fn submit_receipt(input: &[u8]) -> Result<()> {
     let submission: ReceiptSubmission = serde_json::from_slice(input)?;
-    ensure!(submission.signature.len() <= 144, "signature too large");
-    let signature = hex::decode(&submission.signature)?;
     let reference = ReviewReference {
         enrollment: submission.enrollment,
         id: submission.id,
     };
     let enrollment = load_enrollment(&reference)?;
-    let status = crate::transport::call_protected(
-        &enrollment.socket,
-        &crate::protocol::Request::ExecutionStatus {
-            id: reference.id.clone(),
-        },
-    )?;
-    let prepared: serde_json::Value = serde_json::from_slice(&prepare_fetched_review(
+    submit_enrolled(
         &enrollment,
         &reference.id,
+        &submission.signature,
+        submission.share_output,
+        |request| crate::transport::call_protected(&enrollment.socket, &request),
+    )
+}
+
+fn submit_enrolled(
+    enrollment: &ReviewEnrollment,
+    id: &str,
+    signature: &str,
+    share_output: bool,
+    mut call: impl FnMut(crate::protocol::Request) -> Result<serde_json::Value>,
+) -> Result<()> {
+    ensure!(signature.len() <= 144, "signature too large");
+    let proof = hex::decode(signature)?;
+    let status = call(crate::protocol::Request::ExecutionStatus { id: id.into() })?;
+    let prepared: serde_json::Value = serde_json::from_slice(&prepare_fetched_review(
+        enrollment,
+        id,
         &status,
         crate::broker::now(),
     )?)?;
     let envelope: Envelope = serde_json::from_value(prepared["review"]["envelope"].clone())?;
-    crate::approval_key::ApprovalKey::parse(&enrollment.signing_key)?.verify(
-        &envelope.receipt_approval_payload(submission.share_output)?,
-        &signature,
-    )?;
-    let result = crate::transport::call_protected(
-        &enrollment.socket,
-        &crate::protocol::Request::ApproveReceipt {
-            id: reference.id.clone(),
-            key_id: enrollment.signing_key_id,
-            number: envelope.number,
-            signature: submission.signature,
-            share_output: submission.share_output,
-        },
-    )?;
+    crate::approval_key::ApprovalKey::parse(&enrollment.signing_key)?
+        .verify(&envelope.receipt_approval_payload(share_output)?, &proof)?;
+    let result = call(crate::protocol::Request::ApproveReceipt {
+        id: id.into(),
+        key_id: enrollment.signing_key_id.clone(),
+        number: envelope.number,
+        signature: signature.into(),
+        share_output,
+    })?;
     ensure!(
-        result["receipt_only"] == true
-            && result["id"] == reference.id
-            && result["state"] == "consumed",
+        result["receipt_only"] == true && result["id"] == id && result["state"] == "consumed",
         "receipt acknowledgement not verified"
     );
     Ok(())
@@ -456,6 +460,136 @@ mod tests {
         let mut missing = original;
         missing.as_object_mut().unwrap().remove("receipt_only");
         assert!(prepare_fetched_review(&enrollment, &envelope.id, &missing, 1700000001).is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "native-receipt-lab")]
+    fn native_submission_never_retries_lost_or_invalid_acknowledgements() {
+        use crate::{
+            broker::{Broker, Config},
+            protocol::{PendingView, Request},
+        };
+        use p256::ecdsa::{signature::Signer, Signature, SigningKey};
+        use std::{fs, os::unix::fs::PermissionsExt};
+        for fault in [
+            "before-consumption",
+            "after-consumption",
+            "wrong-id",
+            "wrong-mode",
+            "success",
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+            fs::create_dir(dir.path().join("keys")).unwrap();
+            let key = SigningKey::from_slice(&[27; 32]).unwrap();
+            let path = dir.path().join("keys/native.pub");
+            fs::write(&path, fixture_key()).unwrap();
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+            let uid = unsafe { libc::geteuid() };
+            let enrollment = ReviewEnrollment {
+                version: 1,
+                receipt_only: true,
+                machine_id: uuid::Uuid::new_v4().to_string(),
+                socket: dir.path().join("run/unused.sock"),
+                approver_uid: uid,
+                signing_key: fixture_key(),
+                signing_key_id: "native".into(),
+                machine_name: "test".into(),
+                operating_system: "test OS".into(),
+                account: "test-user".into(),
+            };
+            enrollment.validate(uid).unwrap();
+            let mut broker = Broker::open(
+                Config {
+                    machine_id: enrollment.machine_id.clone(),
+                    agent_uid: uid,
+                    approver_uid: uid,
+                    socket_gid: unsafe { libc::getegid() },
+                    state_dir: dir.path().into(),
+                    socket: enrollment.socket.clone(),
+                    approval_ttl_secs: 300,
+                    max_execution_secs: 300,
+                },
+                true,
+            )
+            .unwrap();
+            let spec = serde_json::from_value(fixture()["envelope"]["spec"].clone()).unwrap();
+            let (reply, job) = broker
+                .handle_current(Request::RequestExecution { spec }, uid)
+                .unwrap();
+            assert!(job.is_none());
+            let pending: PendingView = serde_json::from_value(reply.value().unwrap()).unwrap();
+            let id = &pending.envelope.id;
+            let proof: Signature =
+                key.sign(&pending.envelope.receipt_approval_payload(false).unwrap());
+            let signature = hex::encode(proof.to_der());
+            let mut calls = Vec::new();
+            let result = submit_enrolled(&enrollment, id, &signature, false, |request| {
+                let approving = matches!(request, Request::ApproveReceipt { .. });
+                calls.push(approving);
+                if approving && fault == "before-consumption" {
+                    anyhow::bail!("connection lost before delivery");
+                }
+                let (reply, job) = if approving {
+                    broker.handle_receipt_current(request, uid)?
+                } else {
+                    broker.handle_current(request, uid)?
+                };
+                assert!(job.is_none(), "receipt path returned an execution job");
+                if approving && fault == "after-consumption" {
+                    anyhow::bail!("reply lost after commit");
+                }
+                let mut value = reply.value()?;
+                value["receipt_only"] = true.into();
+                if approving && fault == "wrong-id" {
+                    value["id"] = "different-request".into();
+                }
+                if approving && fault == "wrong-mode" {
+                    value["receipt_only"] = false.into();
+                }
+                Ok(value)
+            });
+            assert_eq!(result.is_ok(), fault == "success", "{fault}");
+            assert_eq!(calls, [false, true], "automatic retry after {fault}");
+            let status = broker
+                .handle_current(Request::ExecutionStatus { id: id.clone() }, uid)
+                .unwrap()
+                .0
+                .value()
+                .unwrap();
+            let consumed = fault != "before-consumption";
+            assert_eq!(
+                status["state"],
+                if consumed { "consumed" } else { "pending" }
+            );
+            let db = rusqlite::Connection::open_with_flags(
+                dir.path().join("state.sqlite3"),
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )
+            .unwrap();
+            let count: i64 = db
+                .query_row(
+                    "SELECT COUNT(*) FROM audit WHERE event='consumed'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, i64::from(consumed));
+            if consumed {
+                let mut followups = 0;
+                assert!(
+                    submit_enrolled(&enrollment, id, &signature, false, |request| {
+                        followups += 1;
+                        assert!(matches!(request, Request::ExecutionStatus { .. }));
+                        let mut value = broker.handle_current(request, uid)?.0.value()?;
+                        value["receipt_only"] = true.into();
+                        Ok(value)
+                    })
+                    .is_err()
+                );
+                assert_eq!(followups, 1);
+            }
+        }
     }
 
     #[test]

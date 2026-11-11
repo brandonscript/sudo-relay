@@ -499,3 +499,21 @@ retry. Dropped-reply coverage of this specific bridge remains open.
 The receipt-domain separation increment passed full CI run 42946166927. For
 native submission, eight local bridge tests, the Swift protocol checks/build and
 strict lint with and without lab features pass. No local root service was run.
+
+### Lost or invalid native receipt acknowledgements
+
+`native_submission_never_retries_lost_or_invalid_acknowledgements` uses the real
+receipt-verification broker and SQLite state with disposable P-256 software keys.
+A transport callback injects failure before delivery or after the committed
+consumption, or corrupts the reply's request ID/receipt-mode marker. A valid reply
+is the positive control. Each attempt makes one status fetch and one submission,
+with no automatic retry. Lost or invalid replies fail; only a valid matching
+acknowledgement succeeds.
+
+After-delivery cases leave exactly one consumed audit entry, before-delivery
+failure leaves zero, and every receipt handler returns no execution job. An
+explicit replay after consumption stops at status retrieval without resubmitting.
+The fault is injected at the transport boundary; this is not an actual socket
+disconnect or proof against a compromised operating system. This local test and
+strict lint pass. The preceding native submission root jobs passed in run
+42946565284; its broader macOS check was still running at this checkpoint.
