@@ -157,3 +157,15 @@ Two additional native-sudo characterization tests are implemented at [prototype 
 ### Independent gate acceptance (prototype only)
 
 At [prototype commit 751e259](https://github.com/brandonscript/sudo-relay/tree/751e259/security-lab/sudo-prototype), four additional tests cover the root-only pre-launch gate: NOPASSWD with invalid/absent grants plus a valid positive control; durable single consumption and lost-child nonce reuse; sponsor invocation and missing cache-isolation flag; and lack of cache warming under nonzero global timestamp defaults. Fifteen local tests passed and the native-sudo CI job passed. Two characterization cases deliberately bypass the gate to document PAM-only weaknesses. The published broker's integration and authenticated enrollment remain pending.
+
+## Enrollment filesystem checks (implemented; no execution service)
+
+`fixture/test_enrollment.py` runs five controller-managed cases in a disposable
+Linux container. Both agent and approver UIDs are denied production pairing and
+revocation; administrator pairing is non-overwriting and revocation removes its
+key; group/world-writable configuration or parent paths and agent-owned trust
+directories are rejected; a pre-existing key symlink cannot overwrite its target.
+Positive controls check exact public-key contents and root-only permissions.
+Only a public test vector is used. No request, signer, listener or command runner
+starts. Five local cases passed November 10, 2026. This does not establish sponsor
+provenance, ACL safety, races, live revocation or protected native enrollment.

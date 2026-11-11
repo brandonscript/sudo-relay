@@ -9,7 +9,7 @@ FROM python:3.13-slim-trixie@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d981
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 COPY --from=build /build/target/debug/broker /usr/local/bin/broker
 COPY --from=build /build/target/debug/examples/approval_payload /usr/local/bin/fixture-approval-payload
-COPY security-lab/fixture/init.py security-lab/fixture/rpc.py security-lab/fixture/test_smoke.py security-lab/fixture/test_replay.py /fixture/
+COPY security-lab/fixture/init.py security-lab/fixture/rpc.py security-lab/fixture/test_smoke.py security-lab/fixture/test_replay.py security-lab/fixture/test_enrollment.py /fixture/
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HOME=/tmp
 WORKDIR /fixture
 ENTRYPOINT ["python", "/fixture/init.py"]

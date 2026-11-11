@@ -60,6 +60,32 @@ The standard-library suite runs as the agent UID and checks:
 
 Each command-bearing case uses a unique marker and cancels any remaining pending request. A failed assertion returns a nonzero exit code. No approval is signed or granted. The file-permission cases require `PermissionError`; a missing accessible file is a failure, not a pass.
 
+## Check enrollment without an execution service
+
+This separate run does not start the broker listener, submit commands, create
+private signing keys or use sudo. It invokes only `init`, `pair` and `revoke` in
+a fresh container with the same isolation settings:
+
+```sh
+docker compose -p enrollment-check -f security-lab/fixture/compose.yaml build
+docker compose -p enrollment-check -f security-lab/fixture/compose.yaml run --rm --no-deps -T --entrypoint python sandbox /fixture/test_enrollment.py
+docker compose -p enrollment-check -f security-lab/fixture/compose.yaml down --volumes --remove-orphans
+```
+
+Five cases check that both unprivileged roles cannot pair/revoke, pairing refuses
+to overwrite an existing key, administrator revocation removes it, writable
+configuration/parent paths and agent-owned trust directories are rejected, and
+pairing cannot overwrite a file through a pre-existing key symlink. Positive
+controls check the installed public key's owner/mode and contents. A public test
+vector replaces credentials. All five passed locally on Linux arm64 on November
+10, 2026; hosted CI is pending.
+
+These establish specific CLI and filesystem checks, not protected human pairing,
+sponsor provenance, live revocation enforcement, ACL handling, replacement races,
+code-update policy or macOS behavior. The initial ownership test exposed a cleanup
+error because container root lacks DAC override; the test now restores ownership
+before inspection/cleanup. No container permission was broadened.
+
 ## Run approval replay and output tests
 
 These tests need the fixture controller to launch subprocesses under both identities. Omit `--user` for this test file only:
