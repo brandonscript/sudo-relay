@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 
 SOURCE = Path(__file__).resolve().parent
 assert sys.argv[1:] in ([], ["--prepare-native"]), "Use --prepare-native to retain a manual-test app"
@@ -49,6 +50,9 @@ def vary(bundle: Path) -> None:
 
 with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
     root = Path(scratch)
+    repo = SOURCE.parent.parent
+    run("cargo", "build", "--locked", "--manifest-path", str(repo / "Cargo.toml"),
+        "--features", "native-receipt-lab", "--lib", "--bin", "receipt-verifier")
     original = root / "original" / "PeerLab.app"
     helper_relative = Path("Contents/XPCServices/local.sudo-relay.peer-service.xpc")
     helper = original / helper_relative
@@ -58,10 +62,19 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
     ]:
         binary = bundle / "Contents/MacOS" / role
         binary.parent.mkdir(parents=True)
+        extras = [str(SOURCE.parent / "native-protocol/ReceiptPipe.swift")] if role == "Service" else [
+            str(SOURCE.parent / "native-protocol/BrokerReview.swift"), str(SOURCE / "DurableClient.swift"),
+            "-I", str(SOURCE.parent / "native-protocol"), "-L", str(repo / "target/debug"), "-lsudo_relay",
+            "-framework", "Security", "-framework", "SystemConfiguration", "-liconv"]
         run("/usr/bin/xcrun", "swiftc", "-swift-version", "6", "-parse-as-library", "-warnings-as-errors",
             "-module-cache-path", str(root / "modules"), str(SOURCE / "Shared.swift"),
             str(SOURCE.parent / "touch-id/Sources/ApprovalProbe/ReviewBoundary.swift"),
-            str(SOURCE / f"{role}.swift"), "-o", str(binary))
+            str(SOURCE / f"{role}.swift"), *extras, "-o", str(binary))
+        if role == "Service":
+            child = bundle / "Contents/Helpers/receipt-verifier"
+            child.parent.mkdir(parents=True)
+            shutil.copy2(repo / "target/debug/receipt-verifier", child)
+            sign(child)
         info: dict[str, object] = {"CFBundleExecutable": role, "CFBundleIdentifier": identifier,
                                   "CFBundleName": role, "CFBundlePackageType": kind, "CFBundleVersion": "1"}
         if role == "Service":
@@ -77,7 +90,7 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
     original_service = cdhash(helper)
     results: list[dict[str, object]] = []
     for case in ["allowed", "variant-client-allowed", "substituted-client", "variant-service-allowed",
-                 "substituted-service", "substituted-service-without-handshake", "signed-review", "signed-denied", "signed-reconnect"]:
+                 "substituted-service", "substituted-service-without-handshake", "signed-review", "signed-denied", "signed-reconnect", "durable-review"]:
         case_root = root / case
         app = case_root / "PeerLab.app"
         shutil.copytree(original, app)
@@ -100,20 +113,33 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
         }))
         characterization = case.endswith("without-handshake")
         arguments = ["--characterize-without-handshake"] if characterization else []
-        if case in ["signed-review", "signed-denied", "signed-reconnect"]:
+        if case in ["signed-review", "signed-denied", "signed-reconnect", "durable-review"]:
             run(str(app / "Contents/MacOS/Client"), "--fixture-key")
             arguments = [f"--{case}"]
+        if case == "durable-review":
+            state = case_root / "state"
+            state.mkdir(mode=0o700)
+            (state / "keys").mkdir(mode=0o700)
+            key = state / "keys/native.pub"
+            key.write_text("p256-sha256:04" + (case_root / "fixture-public.key").read_bytes().hex())
+            key.chmod(0o600)
+            (case_root / "broker-config.json").write_text(json.dumps({
+                "machine_id": str(uuid.uuid4()), "agent_uid": os.getuid(), "approver_uid": os.getuid(),
+                "socket_gid": os.getgid(), "state_dir": str(state), "socket": str(case_root / "unused.sock"),
+            }))
         result = subprocess.run([str(app / "Contents/MacOS/Client"), *arguments], text=True,
                                 capture_output=True, timeout=15)
         events = [json.loads(line) for line in result.stdout.splitlines()]
         receipt = case_root / "receipt.txt"
-        if case in ["signed-review", "signed-denied", "signed-reconnect"]:
+        if case in ["signed-review", "signed-denied", "signed-reconnect", "durable-review"]:
             expected = {"signed-review": "signed-review-one-receipt-alteration-and-replay-rejected",
                         "signed-denied": "signed-review-denied-zero-receipts",
-                        "signed-reconnect": "replacement-peer-verified-approved-replay-rejected"}[case]
+                        "signed-reconnect": "replacement-peer-verified-approved-replay-rejected",
+                        "durable-review": "durable-xpc-one-receipt-alteration-and-replay-rejected"}[case]
             assert result.returncode == 0 and events == [{"event": "peer-verified"},
                 {"event": expected}], (case, result)
             assert not receipt.exists()
+            assert not (case_root / "must-not-exist").exists()
         elif case.endswith("allowed"):
             assert result.returncode == 0 and events == [{"event": "peer-verified"}, {"event": "receipt-received"}], (case, result)
             assert receipt.read_text() == "peer-check-receipt-only\n"
@@ -123,7 +149,7 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
             assert events[0]["code"] in (["4102"] if case.startswith("substituted-service") else ["4097", "4102"]), (case, events)
             assert receipt.exists() == characterization, f"{case}: unexpected receipt state"
         results.append({"case": case, "expectation_met": True, "known_unsafe_pattern": characterization,
-                        "receipt_count": 1 if case in ["signed-review", "signed-reconnect"] else int(receipt.exists()), "events": events})
+                        "receipt_count": 1 if case in ["signed-review", "signed-reconnect", "durable-review"] else int(receipt.exists()), "events": events})
     native_app: str | None = None
     if sys.argv[1:] == ["--prepare-native"]:
         packaged = run("/usr/bin/xcrun", "swift", "-module-cache-path", str(root / "modules"),

@@ -8,6 +8,7 @@ swiftc -swift-version 6 -warnings-as-errors -module-cache-path "$check_dir/modul
   -I security-lab/native-protocol \
   security-lab/native-protocol/check.swift security-lab/native-protocol/BrokerReview.swift \
   security-lab/native-protocol/DurableCheck.swift \
+  security-lab/native-protocol/ReceiptPipe.swift \
   security-lab/touch-id/Sources/ApprovalProbe/ReviewBoundary.swift \
   security-lab/touch-id/Sources/ApprovalProbe/NativeReviewForm.swift \
   -L target/debug -lsudo_relay -framework Security \

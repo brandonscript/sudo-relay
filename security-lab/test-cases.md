@@ -210,3 +210,11 @@ Rust verifier with no executor call. See the [runbook](native-protocol/README.md
 NP1–NP4 passed locally November 10, 2026. The subprocess is a test-controlled pipe,
 not authenticated production IPC. No hardware authentication, protected enrollment,
 lost-reply recovery, ledger rollback or real execution was tested here.
+
+NP5: `python3 security-lab/xpc-peer/check.py` now includes `durable-review`.
+After authenticating the XPC service, it retrieves the production broker model,
+signs its exact decision with a software key, and reaches the durable Rust
+verifier through the service. One approval consumes; altered sharing and replay
+reject; status is `consumed`; canary remains absent. Ten XPC cases pass locally.
+This is not runtime child identity protection, administrator enrollment or a
+hardware-signing test. See the [XPC limits](xpc-peer/README.md#durable-broker-path-through-xpc).

@@ -15,7 +15,7 @@ struct Client {
             try key.publicKey.rawRepresentation.write(to: root.appendingPathComponent("fixture-public.key"))
             return
         }
-        guard arguments.isEmpty || arguments == ["--characterize-without-handshake"] || arguments == ["--signed-review"] || arguments == ["--signed-denied"] || arguments == ["--signed-reconnect"] else { exit(2) }
+        guard arguments.isEmpty || arguments == ["--characterize-without-handshake"] || arguments == ["--signed-review"] || arguments == ["--signed-denied"] || arguments == ["--signed-reconnect"] || arguments == ["--durable-review"] else { exit(2) }
         let policy = try PeerPolicy.load(from: root)
         let connection = NSXPCConnection(serviceName: "local.sudo-relay.peer-service")
         connection.remoteObjectInterface = NSXPCInterface(with: PeerReceiptProtocol.self)
@@ -38,7 +38,9 @@ struct Client {
             proxy.hello { response in
                 guard response == "peer-check-hello" else { report("invalid-hello"); exit(2) }
                 report("peer-verified")
-                if arguments == ["--signed-reconnect"] {
+                if arguments == ["--durable-review"] {
+                    Task { @MainActor in await checkDurableXPC(proxy, root: root) }
+                } else if arguments == ["--signed-reconnect"] {
                     Task { @MainActor in await checkReconnect(proxy, root: root, policy: policy) }
                 } else if arguments == ["--signed-review"] || arguments == ["--signed-denied"] {
                     checkSignedReview(proxy, root: root, denied: arguments == ["--signed-denied"])

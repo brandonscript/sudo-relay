@@ -142,6 +142,15 @@ remains absent. This joins native parsing/signing and real durable verification
 over a test-controlled pipe; authenticated XPC retrieval and protected enrollment
 remain separate, unfinished integration work.
 
+The XPC harness now joins those components in its `durable-review` case. After
+the pinned read-only handshake, the client retrieves a broker request, constructs
+the native model, signs with a disposable software key and submits through XPC
+to the bundled Rust verifier child. One consumption, altered-sharing rejection,
+replay rejection and an absent canary pass. The service never restarts a failed
+child or switches verification formats. Runtime child identity, protected
+installation/enrollment and hardware signing on this joined path remain open;
+bundle verification in the fixture is not a substitute for those boundaries.
+
 The dependency and its transitive graph are locked. This increment is not a full
 cryptographic dependency audit; upstream advisories and release provenance still
 need the release review already listed in the backlog.

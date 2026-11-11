@@ -2,7 +2,8 @@
 
 Test whether macOS rejects the wrong program on either side of a local XPC
 connection. **No command executes and no human approval is tested.** A transport
-receipt is a fixed text file, not an approval or a signature usable by the broker.
+receipt is a fixed text file. Separate signed cases use disposable test keys;
+the durable case exercises real broker approval bytes only in temporary lab state.
 
 Run as an ordinary user on macOS 13 or later with Swift 6 and command-line tools:
 
@@ -10,9 +11,9 @@ Run as an ordinary user on macOS 13 or later with Swift 6 and command-line tools
 python3 security-lab/xpc-peer/check.py
 ```
 
-The harness builds two small processes into temporary app/XPC bundles, signs
+The harness builds client/service processes and a receipt-only Rust child into temporary app/XPC bundles, signs
 them ad hoc with the hardened-runtime option, pins their exact code-directory
-hashes, and runs nine cases. The signed-review case creates disposable software keys
+hashes, and runs ten cases. The signed-review case creates disposable software keys
 in the temporary fixture directory. It uses no signing certificate, password,
 biometric prompt, network listener, sudo/PAM change or installed service.
 macOS launches the bundled helper on demand. Helpers retain state across individual
@@ -162,3 +163,28 @@ clock value after expiry and a new verifier reporting an old request as unknown.
 This is not persistent clock-rollback protection: no durable state survives service
 exit, and an unobserved clock rollback remains outside these checks. The native UI
 still does not reconnect automatically or retry an ambiguous submission.
+
+## Durable broker path through XPC
+
+The tenth case, `durable-review`, passed locally November 10, 2026. It completes
+the read-only XPC identity handshake, requests a receipt-only broker envelope,
+validates it through `BrokerReview` and the Rust encoder, signs the selected
+decision with a disposable software P-256 key, and submits it over the same
+authenticated channel. The service forwards bounded messages to its bundled
+ordinary-user `receipt-verifier` child. The real broker ledger consumes one proof;
+changed output sharing and replay reject, and status reports `consumed`. The
+canary file remains absent. No executor is called.
+
+The Rust child is built only with the lab feature, signed ad hoc and included in
+the service bundle. The harness verifies the bundle before running it. This is
+not protected deployment: the fixture's bundle, configuration and keys remain
+same-user writable. Runtime child identity validation, replacement races and
+protected installation still need implementation and testing; an XPC peer check
+does not independently authenticate a subsequently launched child process.
+
+On child communication failure the service disables that path and returns no
+result. It never restarts the child, retries an approval or falls back to the
+older in-memory verifier. The separate pipe test covers Rust process restart and
+spent approval persistence; this tenth case does not yet test an XPC service
+restart or a lost submission reply. The existing manual Touch ID app still uses
+the older JSON receipt path; no new hardware claim follows from this test.

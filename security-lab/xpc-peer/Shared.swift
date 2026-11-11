@@ -10,6 +10,7 @@ protocol PeerReceiptProtocol: Sendable {
     func cancel(reply: @escaping @Sendable () -> Void)
     func review(reply: @escaping @Sendable (Data?, Data?, Data?) -> Void)
     func submit(_ decision: Data, signature: Data, reply: @escaping @Sendable (Bool) -> Void)
+    func broker(_ request: Data, reply: @escaping @Sendable (Data?) -> Void)
 }
 
 struct PeerPolicy: Decodable {

@@ -5,16 +5,31 @@ final class ReceiptService: NSObject, NSXPCListenerDelegate, PeerReceiptProtocol
     private let policy: PeerPolicy
     private let root: URL
     private let verifier: ReviewReceiptVerifier?
+    private var durable: ReceiptProcess?
     // XPC may deliver different clients concurrently; serialize the test receipt file.
     private let lock = NSLock()
 
     init(policy: PeerPolicy, root: URL) throws {
         self.policy = policy; self.root = root
+        let config = root.appendingPathComponent("broker-config.json")
+        if FileManager.default.fileExists(atPath: config.path) {
+            durable = try ReceiptProcess(executable: Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/receipt-verifier"), config: config)
+        }
         let keyFile = root.appendingPathComponent("fixture-public.key")
         if FileManager.default.fileExists(atPath: keyFile.path) {
             let key = try P256.Signing.PublicKey(rawRepresentation: Data(contentsOf: keyFile))
             verifier = ReviewReceiptVerifier(signer: key, now: Int64(Date().timeIntervalSince1970))
         } else { verifier = nil }
+    }
+
+    func broker(_ request: Data, reply: @escaping @Sendable (Data?) -> Void) {
+        lock.lock(); defer { lock.unlock() }
+        guard request.count < 65536, let durable else { reply(nil); return }
+        do { reply(try durable.exchange(request)) }
+        catch {
+            // Unknown outcome stays unknown. No automatic child restart or approval resubmission.
+            durable.stop(); self.durable = nil; reply(nil)
+        }
     }
 
     func status(_ id: String, reply: @escaping @Sendable (String) -> Void) {
