@@ -360,3 +360,140 @@ fn protected_reads_reject_user_owned_policy() {
     fs::write(&file, b"test policy").unwrap();
     assert!(read_protected_file(&file, 1024).is_err());
 }
+
+#[test]
+#[ignore = "root only; receipt-only enrollment in disposable CI machines"]
+fn protected_p256_enrollment_and_revocation_without_execution() {
+    use p256::ecdsa::{signature::Signer as _, Signature, SigningKey as P256Key};
+    use std::os::unix::fs::MetadataExt;
+    use sudo_relay::broker::Broker;
+    assert_eq!(unsafe { libc::geteuid() }, 0);
+    let parent = if cfg!(target_os = "macos") {
+        "/private/var"
+    } else {
+        "/var/lib"
+    };
+    let dir = PathBuf::from(parent).join(format!("sudo-relay-pair-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&dir).unwrap();
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+    let _cleanup = Cleanup {
+        dir: dir.clone(),
+        child: None,
+    };
+    let binary = dir.join("broker");
+    fs::copy(env!("CARGO_BIN_EXE_broker"), &binary).unwrap();
+    fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
+    let config_path = dir.join("config.json");
+    let state = dir.join("state");
+    let socket = dir.join("run/broker.sock");
+    let initialized = Process::new(&binary)
+        .arg("init")
+        .arg(&config_path)
+        .arg(&state)
+        .arg(&socket)
+        .args(["10001", "10002", "10001"])
+        .output()
+        .unwrap();
+    assert!(
+        initialized.status.success(),
+        "{}",
+        String::from_utf8_lossy(&initialized.stderr)
+    );
+    let key = P256Key::from_slice(&[27; 32]).unwrap();
+    let public = hex::encode(key.verifying_key().to_sec1_point(false));
+    let enroll = |uid: u32, method: &str, extra: &[&str]| {
+        let mut command = Process::new(&binary);
+        command
+            .arg(method)
+            .arg(&config_path)
+            .arg("native")
+            .args(extra);
+        unsafe {
+            command.pre_exec(move || {
+                if libc::setgroups(0, std::ptr::null()) != 0
+                    || libc::setgid(uid) != 0
+                    || libc::setuid(uid) != 0
+                {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        command.output().unwrap()
+    };
+    for uid in [10001, 10002] {
+        assert!(!enroll(uid, "pair-p256", &[&public]).status.success());
+    }
+    let keyfile = state.join("keys/native.pub");
+    assert!(!keyfile.exists());
+    assert!(!enroll(0, "pair-p256", &[&"00".repeat(65)]).status.success());
+    assert!(!keyfile.exists());
+    assert!(enroll(0, "pair-p256", &[&public]).status.success());
+    let original = fs::read(&keyfile).unwrap();
+    assert_eq!(original, format!("p256-sha256:{public}").as_bytes());
+    let metadata = fs::metadata(&keyfile).unwrap();
+    assert_eq!(metadata.uid(), 0);
+    assert_eq!(metadata.mode() & 0o777, 0o600);
+    assert!(!enroll(0, "pair-p256", &[&public]).status.success());
+    for uid in [10001, 10002] {
+        assert!(!enroll(uid, "revoke", &[]).status.success());
+    }
+    assert_eq!(fs::read(&keyfile).unwrap(), original);
+    let config: Config = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    let mut broker = Broker::open(config.clone(), false).unwrap();
+    let (_, job) = broker
+        .handle(
+            Request::RequestExecution {
+                spec: Spec {
+                    command: Command::Argv {
+                        argv: vec!["/usr/bin/true".into()],
+                    },
+                    reason: "Receipt-only enrollment check; never execute".into(),
+                    timeout_secs: 30,
+                    env: BTreeMap::new(),
+                    output_needed: false,
+                },
+            },
+            config.agent_uid,
+            100,
+        )
+        .unwrap();
+    assert!(job.is_none());
+    // Read the frozen request from the ledger without opening a command-execution service.
+    let db = rusqlite::Connection::open(state.join("state.sqlite3")).unwrap();
+    let json: String = db
+        .query_row("SELECT envelope FROM requests", [], |row| row.get(0))
+        .unwrap();
+    let envelope: sudo_relay::protocol::Envelope = serde_json::from_str(&json).unwrap();
+    let signature: Signature = key.sign(&envelope.approval_payload(false).unwrap());
+    let approval = || Request::Approve {
+        id: envelope.id.clone(),
+        key_id: "native".into(),
+        number: envelope.number.clone(),
+        share_output: false,
+        signature: hex::encode(signature.to_der()),
+    };
+    assert!(enroll(0, "revoke", &[]).status.success());
+    assert!(!keyfile.exists());
+    assert!(broker.handle(approval(), config.approver_uid, 101).is_err());
+    let status: String = db
+        .query_row("SELECT state FROM requests", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(status, "pending");
+    let consumed: u32 = db
+        .query_row(
+            "SELECT count(*) FROM audit WHERE event='consumed'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(consumed, 0);
+    // Known gap: re-pairing the same key can revive a still-pending old approval.
+    assert!(enroll(0, "pair-p256", &[&public]).status.success());
+    let (_, job) = broker.handle(approval(), config.approver_uid, 102).unwrap();
+    assert!(
+        job.is_some(),
+        "characterization control must expose the pending-request gap"
+    );
+    drop(job); // Receipt-only: never call the executor.
+}

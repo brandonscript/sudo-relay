@@ -63,3 +63,13 @@ ancestor directory. The named test passed in the macOS privileged job of
 verified in that job’s log. This records that job, not completion of the entire run. These checks do not eliminate races
 against an already-privileged actor, establish protected native-app enrollment,
 or evaluate every filesystem/ACL implementation. Linux behavior is unchanged.
+
+### Key revocation and re-pairing gap
+
+Revocation currently removes the public-key file without cancelling pending
+requests. Reinstalling the same key can make an old, unexpired signed approval
+valid again. Key removal is also not serialized with an approval already verifying
+that key. Protected file ownership does not solve either issue. The receipt-only
+disposable test catalogue now includes this unsafe re-pairing control; fixing it
+requires retiring pending approvals and coordinating revocation with consumption.
+Do not treat key-file deletion as an atomic revocation boundary.

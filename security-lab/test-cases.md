@@ -299,3 +299,19 @@ All six new cases and the thirteen existing cases pass locally. The policy files
 are deliberately user-owned fixtures; protected-file enforcement is tested
 separately. Between-check changes, revocation/consumption races, service restart
 and policy rollback are not covered by these results.
+
+### Protected P-256 enrollment and key re-pairing characterization
+
+`protected_p256_enrollment_and_revocation_without_execution` runs only in
+disposable root CI. Initialize a protected store, reject pairing/revocation as
+either client UID, reject an invalid P-256 point, pair explicitly as administrator,
+verify owner/mode/algorithm, and reject replacement. Freeze a request and sign it
+with a disposable software key; removing the key must reject that proof without
+consumption. No broker service or executor is started.
+
+**Known unsafe control:** re-pair the same key and submit the old pending proof.
+The current implementation accepts it. The test deliberately records that behavior
+and drops the returned job; acceptance is not a security pass. Revocation must
+retire pending requests and be coordinated with consumption before this control
+can become a rejection regression. Compilation/lint pass locally; runtime is
+restricted to disposable CI. This does not test sponsor provenance or hardware.
