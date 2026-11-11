@@ -103,8 +103,10 @@ with tempfile.TemporaryDirectory(prefix="sr-target-", dir="/tmp") as scratch, Ex
         client = Client(socket, html)
         cleanup.callback(client.close)
         clients[alias] = client
-        client.rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
+        version = "2025-11-25" if alias in ("home", "backup") else "2025-06-18"
+        initialized = client.rpc("initialize", {"protocolVersion": version, "capabilities": {},
                                   "clientInfo": {"name": f"routing-{alias}", "version": "1"}})
+        assert initialized["protocolVersion"] == version
         assert client.process.stdin
         client.process.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
         client.process.stdin.flush()
@@ -113,6 +115,7 @@ with tempfile.TemporaryDirectory(prefix="sr-target-", dir="/tmp") as scratch, Ex
         assert sorted(object_value(tool)["name"] for tool in tools) == ["cancel_execution", "execution_status", "request_execution"]
         resource = client.rpc("resources/read", {"uri": "ui://sudo-relay/approval.html"})
         assert f"Inert resource fixture: {alias}" in json.dumps(resource)
+        assert "resultType" not in resource
         result = client.call("request_execution", {"spec": {"command": {"kind": "argv", "argv": ["/usr/bin/printf", "never run"]},
                                                               "reason": "Routing fixture only", "timeout_secs": 1}})
         assert object_value(result["structuredContent"])["fixture_target"] == alias

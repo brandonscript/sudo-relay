@@ -30,7 +30,7 @@ hex = "0.4"
 libc = "0.2"
 p256 = { version = "0.14", default-features = false, features = ["ecdsa", "std"] }
 rand = "0.8"
-rmcp = { version = "0.15", features = ["transport-io"] }
+rmcp = { version = "3.9", features = ["transport-io"] }
 rusqlite = { version = "0.41", features = ["bundled"] }
 schemars = "1"
 serde = { version = "1", features = ["derive"] }

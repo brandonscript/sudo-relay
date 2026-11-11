@@ -3,10 +3,8 @@ mod host_info;
 
 use rand::{rngs::OsRng, Rng, RngCore};
 use rmcp::{
-    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::*,
-    service::RequestContext,
-    tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler, ServiceExt,
+    handler::server::wrapper::Parameters, model::*, service::RequestContext, tool, tool_handler,
+    tool_router, ErrorData as McpError, RoleServer, ServerHandler, ServiceExt,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -120,7 +118,7 @@ impl Ledger {
         }
     }
     fn result(&self, request: &Request) -> CallToolResult {
-        let mut result = CallToolResult::success(vec![Content::text(
+        let mut result = CallToolResult::success(vec![ContentBlock::text(
             "Receipt-only experiment. Nothing executes. This is not proof of human approval.",
         )]);
         result.structured_content = Some(
@@ -134,20 +132,19 @@ impl Ledger {
 struct Server {
     html: Arc<String>,
     ledger: Arc<Mutex<Ledger>>,
-    tool_router: ToolRouter<Self>,
 }
-fn ui_meta() -> Meta {
-    let mut meta = Meta::new();
+fn ui_meta() -> MetaObject {
+    let mut meta = MetaObject::new();
     meta.insert("ui".into(), json!({"resourceUri":URI}));
     meta
 }
-fn app_only() -> Meta {
-    let mut meta = Meta::new();
+fn app_only() -> MetaObject {
+    let mut meta = MetaObject::new();
     meta.insert("ui".into(), json!({"visibility":["app"]}));
     meta
 }
 fn error(message: &str) -> CallToolResult {
-    CallToolResult::error(vec![Content::text(message)])
+    CallToolResult::error(vec![ContentBlock::text(message)])
 }
 #[tool_router]
 impl Server {
@@ -155,7 +152,6 @@ impl Server {
         Self {
             html: Arc::new(html),
             ledger: Arc::new(Mutex::new(Ledger::new())),
-            tool_router: Self::tool_router(),
         }
     }
     #[tool(description="Create a harmless fixed receipt-only test card. No command executes; no real credentials are used.",meta=ui_meta())]
@@ -176,7 +172,7 @@ impl Server {
         ledger.requests.push(Request::new(now()));
         let request = ledger.requests.last().expect("just inserted");
         let mut result = ledger.result(request);
-        let mut meta = Meta::new();
+        let mut meta = MetaObject::new();
         meta.insert(
             "probe".into(),
             json!({"id":request.id,"number":request.number,
@@ -257,10 +253,8 @@ impl Server {
 }
 #[tool_handler]
 impl ServerHandler for Server {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo { instructions:Some("Local receipt-only MCP Apps transport experiment. No commands execute. Never request real credentials. UI-only metadata and app-only tools are being tested, not assumed secure.".into()),
-            capabilities:ServerCapabilities::builder().enable_tools().enable_resources().build(),
-            server_info:Implementation {name:"sudo-relay-host-probe".into(),version:"0.1.8".into(),..Default::default()},..Default::default() }
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build()).with_instructions("Local receipt-only MCP Apps transport experiment. No commands execute. Never request real credentials. UI-only metadata and app-only tools are being tested, not assumed secure.").with_server_info(Implementation::new("sudo-relay-host-probe", "0.1.8"))
     }
     async fn list_resources(
         &self,
@@ -268,36 +262,27 @@ impl ServerHandler for Server {
         _: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, McpError> {
         Ok(ListResourcesResult {
-            meta: None,
-            next_cursor: None,
-            resources: vec![RawResource {
-                uri: URI.into(),
-                name: "receipt-probe".into(),
-                title: Some("Receipt-only approval experiment".into()),
-                description: None,
-                mime_type: Some("text/html;profile=mcp-app".into()),
-                size: None,
-                icons: None,
-                meta: None,
-            }
-            .no_annotation()],
+            resources: vec![Resource::new(URI, "receipt-probe")
+                .with_title("Receipt-only approval experiment")
+                .with_mime_type("text/html;profile=mcp-app")],
+            ..Default::default()
         })
     }
     async fn read_resource(
         &self,
         request: ReadResourceRequestParams,
         _: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, McpError> {
+    ) -> Result<ReadResourceResponse, McpError> {
         if request.uri != URI {
             return Err(McpError::resource_not_found("unknown resource", None));
         }
-        Ok(ReadResourceResult {
-            contents: vec![ResourceContents::TextResourceContents {
+        Ok(
+            ReadResourceResult::new(vec![ResourceContents::TextResourceContents {
                 uri: URI.into(),
                 mime_type: Some("text/html;profile=mcp-app".into()),
                 text: self.html.as_str().into(),
                 meta: Some({
-                    let mut m = Meta::new();
+                    let mut m = MetaObject::new();
                     m.insert(
                         "ui".into(),
                         json!({"csp":{"connectDomains":[],"resourceDomains":[]}}),
@@ -308,8 +293,9 @@ impl ServerHandler for Server {
                     );
                     m
                 }),
-            }],
-        })
+            }])
+            .into(),
+        )
     }
 }
 #[tokio::main]

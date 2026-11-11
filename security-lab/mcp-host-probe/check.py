@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import selectors
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 assert os.geteuid() != 0, "Run as an ordinary user"
@@ -34,7 +35,9 @@ def call(name: str, arguments: dict[str, object]) -> dict[str, object]:
 
 
 try:
-    rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "operator-check", "version": "1"}})
+    version = sys.argv[1] if len(sys.argv) > 1 else "2025-11-25"
+    initialized = rpc("initialize", {"protocolVersion": version, "capabilities": {}, "clientInfo": {"name": "operator-check", "version": "1"}})
+    assert initialized["protocolVersion"] == version
     process.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
     process.stdin.flush()
     tools = {tool["name"]: tool for tool in rpc("tools/list", {})["tools"]}

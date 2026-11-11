@@ -18,9 +18,9 @@ receipt-only tests passed for P-256 proofs, restart consumption, old-ledger
 migration and four-host isolation; all-target Clippy passed. No executor was
 called by these targeted tests. Cross-platform CI is separate evidence.
 
-## Remaining MCP advisories
+## MCP update
 
-The scan still reports these records for `rmcp` 0.15.0:
+The earlier scan reported these records for `rmcp` 0.15.0:
 
 - GHSA-33f5-2c5q-wgwj: OAuth resource metadata validation.
 - GHSA-89vp-x53w-74fx / RUSTSEC-2026-0189: HTTP DNS rebinding.
@@ -34,7 +34,24 @@ Records can be retrieved at `https://api.osv.dev/v1/vulns/ID`.
 and transport-io, without HTTP transport or OAuth features. Both MCP binaries
 use stdio. These specific vulnerable HTTP/OAuth paths are not enabled in the
 current build; this is not a claim that the old SDK has no other vulnerabilities.
-Upgrade and compatibility testing remain open. Reevaluate before adding transports.
+Reevaluate before adding transports.
+
+Updated both stdio servers to `rmcp` 3.9.0 and its current resource/content APIs.
+A fresh OSV batch scan of all 168 locked registry packages returned no advisory
+matches on November 10, 2026. The feature tree still has no HTTP, OAuth or MCP
+client transport enabled.
+
+Local receipt-only checks pass with protocol versions 2025-06-18 and 2025-11-25:
+exact tool inventories, app-only approval metadata, inline resource metadata,
+replay/cross-request rejection, and four separate target connections with colliding
+request IDs, cancellation isolation and no offline fallback. All-target Clippy
+with the host-probe/native-receipt-lab features passes. The raw transport holder
+can still approve the capability-based probe; upgrading does not fix that known
+host-boundary limitation.
+
+These checks use the legacy initialize handshake. The SDK also supports newer
+discovery-based negotiation; that route and live desktop-client compatibility
+remain unverified. No installed plugin was refreshed by this dependency change.
 
 ## Still unverified
 

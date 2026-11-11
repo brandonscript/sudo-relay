@@ -1,8 +1,6 @@
 use rmcp::{
-    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::*,
-    service::RequestContext,
-    tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler, ServiceExt,
+    handler::server::wrapper::Parameters, model::*, service::RequestContext, tool, tool_handler,
+    tool_router, ErrorData as McpError, RoleServer, ServerHandler, ServiceExt,
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -27,10 +25,9 @@ struct Submit {
 struct Server {
     socket: PathBuf,
     html: Arc<String>,
-    tool_router: ToolRouter<Self>,
 }
-fn ui_meta() -> Meta {
-    let mut meta = Meta::new();
+fn ui_meta() -> MetaObject {
+    let mut meta = MetaObject::new();
     meta.insert("ui".into(), serde_json::json!({"resourceUri":URI}));
     meta
 }
@@ -40,7 +37,6 @@ impl Server {
         Self {
             socket,
             html: Arc::new(html),
-            tool_router: Self::tool_router(),
         }
     }
     async fn call(&self, request: Request) -> CallToolResult {
@@ -48,14 +44,14 @@ impl Server {
         let result = tokio::task::spawn_blocking(move || transport::call(&socket, &request)).await;
         match result {
             Ok(Ok(value)) => {
-                let mut result = CallToolResult::success(vec![Content::text("Request recorded. Only the trusted host approval card can authorize execution; chat text cannot approve. Inspect execution_status for progress.")]);
+                let mut result = CallToolResult::success(vec![ContentBlock::text("Request recorded. Only the trusted host approval card can authorize execution; chat text cannot approve. Inspect execution_status for progress.")]);
                 result.structured_content = Some(value);
                 result
             }
-            Ok(Err(error)) => CallToolResult::error(vec![Content::text(format!("{error:#}"))]),
-            Err(error) => {
-                CallToolResult::error(vec![Content::text(format!("broker task failed: {error}"))])
-            }
+            Ok(Err(error)) => CallToolResult::error(vec![ContentBlock::text(format!("{error:#}"))]),
+            Err(error) => CallToolResult::error(vec![ContentBlock::text(format!(
+                "broker task failed: {error}"
+            ))]),
         }
     }
     #[tool(description="Request one privileged command. This only creates a pending request; a compatible trusted chat host must obtain explicit human approval. Never send passwords. No execution without a signed approval.",meta=ui_meta())]
@@ -89,41 +85,40 @@ impl Server {
 }
 #[tool_handler]
 impl ServerHandler for Server {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo { instructions:Some("This server adds approval for privileged work without changing your existing permissions. It cannot approve requests. Unsupported chat hosts fail closed. There is no approval tool or password tool.".into()),
-            capabilities:ServerCapabilities::builder().enable_tools().enable_resources().build(),
-            server_info:Implementation {name:"sudo-relay".into(),version:env!("CARGO_PKG_VERSION").into(),..Default::default()},..Default::default() }
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build()).with_instructions("This server adds approval for privileged work without changing your existing permissions. It cannot approve requests. Unsupported chat hosts fail closed. There is no approval tool or password tool.").with_server_info(Implementation::new("sudo-relay", env!("CARGO_PKG_VERSION")))
     }
     async fn list_resources(
         &self,
         _: Option<PaginatedRequestParams>,
         _: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, McpError> {
-        Ok(ListResourcesResult {meta:None,next_cursor:None,resources:vec![RawResource {uri:URI.into(),name:"approval".into(),title:Some("Approve one privileged command".into()),description:Some("Requires a trusted host signing adapter; a generic MCP Apps renderer cannot approve.".into()),mime_type:Some("text/html;profile=mcp-app".into()),size:None,icons:None,meta:None}.no_annotation()]})
+        Ok(ListResourcesResult { resources: vec![Resource::new(URI, "approval").with_title("Approve one privileged command").with_description("Requires a trusted host signing adapter; a generic MCP Apps renderer cannot approve.").with_mime_type("text/html;profile=mcp-app")], ..Default::default() })
     }
     async fn read_resource(
         &self,
         request: ReadResourceRequestParams,
         _: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, McpError> {
+    ) -> Result<ReadResourceResponse, McpError> {
         if request.uri != URI {
             return Err(McpError::resource_not_found("unknown resource", None));
         }
-        Ok(ReadResourceResult {
-            contents: vec![ResourceContents::TextResourceContents {
+        Ok(
+            ReadResourceResult::new(vec![ResourceContents::TextResourceContents {
                 uri: URI.into(),
                 mime_type: Some("text/html;profile=mcp-app".into()),
                 text: self.html.as_str().into(),
                 meta: Some({
-                    let mut m = Meta::new();
+                    let mut m = MetaObject::new();
                     m.insert(
                         "ui".into(),
                         serde_json::json!({"csp":{"connectDomains":[],"resourceDomains":[]}}),
                     );
                     m
                 }),
-            }],
-        })
+            }])
+            .into(),
+        )
     }
 }
 #[tokio::main]
