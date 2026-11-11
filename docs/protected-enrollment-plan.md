@@ -106,6 +106,14 @@ label is insufficient. WebAuthn requires its own challenge/origin/RP/UV checks,
 not simply this bare-signature verification path. Optional modes remain explicit;
 there is no silent fallback.
 
+The TypeScript host adapter now accepts explicit enrolled Ed25519 or P-256
+signature formats. Both use the existing CBOR decision, and neither exposes an
+algorithm selector to the MCP request. Adapter tests verify P-256 signatures for
+both output choices, reject altered commands/output, reject unknown algorithms
+before signing, enforce signature bounds and stop submission if approval expires
+while the signer is waiting. This removes the old Ed25519-only transport check;
+it does not turn the generic signing callback into a protected native channel.
+
 The dependency and its transitive graph are locked. This increment is not a full
 cryptographic dependency audit; upstream advisories and release provenance still
 need the release review already listed in the backlog.

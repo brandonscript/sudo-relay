@@ -68,7 +68,7 @@ async function run(): Promise<void> {
     }
     const machine = object(JSON.parse(readFileSync(config, 'utf8')))['machine_id']; assert.equal(typeof machine, 'string');
     let lastApproval: unknown;
-    const host: TrustedHost = { keyId: 'integration', machineId: machine as string,
+    const host: TrustedHost = { signatureAlgorithm: 'ed25519', keyId: 'integration', machineId: machine as string,
       signHumanApproval: async bytes => sign(null, bytes, keys.privateKey),
       submitApproval: approval => { lastApproval = approval; return brokerCall(socket, approval); } };
     await assert.rejects(approveOnce(pending, '00', true, host));

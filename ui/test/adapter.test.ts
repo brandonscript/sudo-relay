@@ -27,7 +27,7 @@ test('invalid incoming data, altered payload, digest, and expiry fail closed', a
 });
 test('only matching request is signed once and signature binds all bytes', async () => {
   const keys = generateKeyPairSync('ed25519'); let calls = 0; let approval: Approval | undefined;
-  const host: TrustedHost = { keyId: 'host', machineId: 'test-machine', signHumanApproval: async bytes => { calls++; return sign(null, bytes, keys.privateKey); }, submitApproval: async value => { approval = value; return { state: 'consumed' }; } };
+  const host: TrustedHost = { signatureAlgorithm: 'ed25519', keyId: 'host', machineId: 'test-machine', signHumanApproval: async bytes => { calls++; return sign(null, bytes, keys.privateKey); }, submitApproval: async value => { approval = value; return { state: 'consumed' }; } };
   await assert.rejects(approveOnce(pending(), '41', true, host), /number/);
   await assert.rejects(approveOnce(pending(), '42', true, { ...host, machineId: 'other' }), /unpaired/);
   assert.equal(calls, 0);
@@ -42,7 +42,7 @@ test('sharing choice is signed, cannot flip, and must be a runtime boolean', asy
   const keys=generateKeyPairSync('ed25519');
   for(const shareOutput of [false,true]) {
     let captured: Approval|undefined;
-    const host:TrustedHost={keyId:'host',machineId:'test-machine',signHumanApproval:async bytes=>sign(null,bytes,keys.privateKey),submitApproval:async approval=>{captured=approval;}};
+    const host:TrustedHost={signatureAlgorithm:'ed25519',keyId:'host',machineId:'test-machine',signHumanApproval:async bytes=>sign(null,bytes,keys.privateKey),submitApproval:async approval=>{captured=approval;}};
     await approveOnce(pending(),'42',shareOutput,host);
     assert.ok(captured);assert.equal(captured.share_output,shareOutput);
     assert.equal(verify(null,approvalPayload(pending(),shareOutput),keys.publicKey,Buffer.from(captured.signature,'hex')),true);
@@ -97,4 +97,65 @@ test('CryptoKit P-256 DER signatures cover the existing CBOR decisions', () => {
     assert.equal(verify('sha256', bytes, key, signature), true);
     assert.equal(verify('sha256', approvalPayload(pending, !share), key, signature), false);
   }
+});
+
+test('P-256 host signs the reviewed decision with no algorithm selector on the wire', async () => {
+  const keys = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  for (const share of [false, true]) {
+    const request = pending();
+    let captured: Approval | undefined;
+    const host: TrustedHost = {
+      signatureAlgorithm: 'p256-sha256', keyId: 'native', machineId: 'test-machine',
+      signHumanApproval: async bytes => sign('sha256', bytes, keys.privateKey),
+      submitApproval: async value => { captured = value; },
+    };
+    await approveOnce(request, '42', share, host);
+    assert.ok(captured);
+    assert.equal(captured.key_id, 'native');
+    assert.equal('signatureAlgorithm' in captured, false);
+    assert.equal(verify('sha256', approvalPayload(request, share), keys.publicKey, Buffer.from(captured.signature, 'hex')), true);
+    assert.equal(verify('sha256', approvalPayload(request, !share), keys.publicKey, Buffer.from(captured.signature, 'hex')), false);
+    const altered = structuredClone(request);
+    altered.envelope.spec.command = { kind: 'argv', argv: ['/bin/echo', 'different'] };
+    altered.signing_payload = hex(payload(altered.envelope));
+    assert.equal(verify('sha256', approvalPayload(altered, share), keys.publicKey, Buffer.from(captured.signature, 'hex')), false);
+  }
+});
+
+test('unknown host algorithms and invalid signature bounds never submit or fall back', async () => {
+  let signs = 0, submissions = 0;
+  const host: TrustedHost = {
+    signatureAlgorithm: 'p256-sha256', keyId: 'native', machineId: 'test-machine',
+    signHumanApproval: async () => { signs++; return new Uint8Array(73); },
+    submitApproval: async () => { submissions++; },
+  };
+  for (const invalid of [undefined, 'auto', 'rsa']) {
+    await assert.rejects(approveOnce(pending(), '42', true,
+      { ...host, signatureAlgorithm: invalid } as unknown as TrustedHost), /algorithm/);
+  }
+  assert.equal(signs, 0);
+  await assert.rejects(approveOnce(pending(), '42', true, host), /DER/);
+  await assert.rejects(approveOnce(pending(), '42', true,
+    { ...host, signHumanApproval: async () => new Uint8Array() }), /DER/);
+  await assert.rejects(approveOnce(pending(), '42', true,
+    { ...host, signatureAlgorithm: 'ed25519' }), /Ed25519/);
+  assert.equal(signs, 2);
+  assert.equal(submissions, 0);
+});
+
+test('expiry during human signing prevents submission', async () => {
+  const request = pending();
+  let submissions = 0;
+  const originalNow = Date.now;
+  const host: TrustedHost = {
+    signatureAlgorithm: 'ed25519', keyId: 'host', machineId: 'test-machine',
+    signHumanApproval: async () => {
+      Date.now = () => request.envelope.expires_at * 1000;
+      return new Uint8Array(64);
+    },
+    submitApproval: async () => { submissions++; },
+  };
+  try { await assert.rejects(approveOnce(request, '42', false, host), /expired/); }
+  finally { Date.now = originalNow; }
+  assert.equal(submissions, 0);
 });

@@ -33,6 +33,16 @@ Open `http://127.0.0.1:7351` and load a pending request ID. You can review the c
 
 The host is responsible for authenticating a genuine human interaction. A method callable by the model, a number repeated by the agent, or an MCP tool hidden from the model is not proof of approval. Do not expose the signing callback as an MCP tool.
 
+The host must supply `signatureAlgorithm: 'ed25519' | 'p256-sha256'` from its
+enrollment, alongside `keyId` and `machineId`. Ed25519 returns 64 raw signature
+bytes; P-256 signs the same CBOR decision with SHA-256 and returns DER bytes.
+There is no algorithm selector in the approval message: the broker selects it
+from the administrator-paired key. The SDK bounds signature size; cryptographic
+verification remains the broker's responsibility. Unknown host algorithms fail
+before signing, with no fallback. Expiry is checked again after signing returns.
+This SDK support does not connect the native Touch ID lab or establish a
+protected host; those integration and enrollment steps remain unfinished.
+
 The MCP Apps card uses standard tool-result delivery for display. The reference host adds a separate same-origin `approval-host-init` / `approval-human-decision` / `approval-human-cancel` / `approval-host-result` channel. Ordinary MCP Apps hosts without this trusted integration can display the request, but cannot approve it. Custom host integrations must supply an equally protected channel; do not loosen origin checks to make unsupported clients work.
 
 ## Output sharing
