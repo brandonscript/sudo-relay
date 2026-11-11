@@ -187,3 +187,26 @@ machine identity and independent key/consumption state; it does not establish
 MCP multi-target routing, authenticated display labels, sponsor isolation,
 network transport, machine replacement or safe enrollment recovery. Collisions
 are controller-created fixtures, not an exposed request-editing endpoint.
+
+## Native model and durable receipt verification (implemented; no execution)
+
+Run `sh security-lab/native-protocol/check.sh` on macOS as an ordinary user.
+The fixture creates temporary state, a software CryptoKit key, and a separate
+Rust verifier with no executor call. See the [runbook](native-protocol/README.md).
+
+- NP1: Validate broker JSON with the Rust bridge; compare the complete model and
+  both sharing decisions with public vectors. Wrong machine, invalid fields,
+  mismatched payload/digest, expiry and insufficient buffer reject.
+- NP2: Render argv and script models in the existing native form without showing
+  a window. Preserve script body/interpreter, environment and request details;
+  expiry disables approval/sharing and changes Deny to Close.
+- NP3: Submit a native-model P-256 proof to the separate broker verifier. Flipping
+  output sharing rejects; the unchanged proof consumes once; immediate replay
+  rejects. A canary command's target file must not exist.
+- NP4: Terminate and restart the verifier using the same SQLite state. Status is
+  `uncertain`; the old approval still rejects. The same proof cannot authorize a
+  fresh request, even when its request ID and confirmation number are replaced.
+
+NP1–NP4 passed locally November 10, 2026. The subprocess is a test-controlled pipe,
+not authenticated production IPC. No hardware authentication, protected enrollment,
+lost-reply recovery, ledger rollback or real execution was tested here.

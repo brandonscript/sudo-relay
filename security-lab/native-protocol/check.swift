@@ -92,6 +92,7 @@ struct Check {
                 machineName: "same-label", operatingSystem: "macOS test", account: "test-user", now: 1700000001)
             preconditionFailure("wrong machine accepted")
         } catch ReviewError.invalidRequest { }
+        try checkDurableReceipt(root: root)
         print("Native protocol bridge: exact displayed model, both CBOR proofs, wrong host, expiry and buffer bounds passed. Nothing executed.")
     }
 }

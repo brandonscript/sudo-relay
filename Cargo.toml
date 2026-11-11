@@ -10,6 +10,12 @@ crate-type = ["rlib", "staticlib"]
 
 [features]
 host-probe = []
+native-receipt-lab = []
+
+[[bin]]
+name = "receipt-verifier"
+path = "security-lab/native-protocol/verifier.rs"
+required-features = ["native-receipt-lab"]
 
 [[bin]]
 name = "mcp-host-probe"

@@ -3,6 +3,14 @@
 Receipt-only compatibility check. No command executes, no keychain is accessed,
 and no biometric prompt appears.
 
+The check also launches an ordinary-user Rust verifier subprocess using temporary
+state and a disposable software P-256 key. It uses the real broker's signature
+verification and SQLite consumption code, but drops every returned execution job.
+It never starts the broker execution transport. The `receipt-verifier` binary
+requires the explicit `native-receipt-lab` build feature and environment opt-in,
+refuses root, bounds messages and exits after 60 seconds. It is not packaged by
+the release workflow. These are accident guards, not proof of human approval.
+
 The native reviewer should not grow another implementation of the production
 CBOR format. `src/native_review.rs` exposes the existing Rust encoder through a
 small C interface. It takes a bounded pending request, independently supplied
@@ -33,6 +41,19 @@ reject modified payloads/digests, unknown fields, invalid metadata, forbidden
 environment variables and misleading control characters, even when the input
 digest and payload are internally consistent.
 
+The subprocess test creates a broker request, passes it through `BrokerReview`,
+signs its exact decision with CryptoKit, and submits it to the independent Rust
+process. Changed output sharing rejects, one valid proof consumes approval, and
+replay rejects before and after terminating/restarting the verifier. Reusing the
+proof for a fresh request also rejects. The canary command's target file remains
+absent. Temporary state is removed after child processes stop; private signing
+key material exists only in the test controller's memory.
+
+After restart the existing broker reports `uncertain`, because it cannot prove
+whether a consumed execution launched. This fixture deliberately never launches
+anything; it does not rewrite that production state into a success claim. The
+important checked property is that restart never restores permission to replay.
+
 `BrokerReview.swift` decodes only the bridge's validated output into immutable
 typed data, retains both exact decision byte strings and rechecks time before
 returning the chosen decision. It implements the same presentation interface as
@@ -60,6 +81,7 @@ biometric signer as an arbitrary-payload signing endpoint.
 
 The current native/XPC lab still uses its separate JSON receipt format. Wiring
 the new model into authenticated request retrieval, rechecking
-expiry after authentication, and having the independent broker verify and
-durably consume the exact approval remain open. The fixture proves byte-format
-compatibility, not this end-to-end boundary or a production installation.
+expiry after authentication, and joining the XPC and durable verifier paths remain
+open. The pipe test is controlled by the fixture process; it is not authenticated
+production IPC. Protected enrollment, a real biometric signature through this
+durable path, crash-before-reply handling and rollback recovery remain unverified.

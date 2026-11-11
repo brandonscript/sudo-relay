@@ -43,10 +43,11 @@ jobs:
         with:
           node-version: 24
       - run: cargo fmt --check
-      - run: cargo clippy --locked --all-targets --features host-probe -- -D warnings
-      - run: cargo test --locked --features host-probe
+      - run: cargo clippy --locked --all-targets --features host-probe,native-receipt-lab -- -D warnings
+      - run: cargo test --locked --features host-probe,native-receipt-lab
       - name: Check native review protocol bridge without authentication or execution
         if: runner.os == 'macOS'
+        timeout-minutes: 3
         run: sh security-lab/native-protocol/check.sh
       - name: Check isolated Touch ID experiment without hardware authentication
         if: runner.os == 'macOS'

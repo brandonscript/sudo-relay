@@ -132,6 +132,16 @@ The old native lab's thirteen tests still pass. Authenticated production request
 retrieval and separate durable consumption are not connected to this model yet;
 its initializer's name is a caller contract, not an authentication mechanism.
 
+The native protocol fixture now runs `receipt-verifier`, a feature-gated,
+ordinary-user Rust subprocess that reuses `Broker::handle` and its SQLite ledger.
+It drops execution jobs instead of dispatching them. A software CryptoKit key
+signs the native model's exact bytes: changed sharing rejects, one proof consumes,
+replay rejects, and termination/restart preserves spent state (`uncertain`, never
+pending). Transferring that proof to a new request rejects as well. A canary
+remains absent. This joins native parsing/signing and real durable verification
+over a test-controlled pipe; authenticated XPC retrieval and protected enrollment
+remain separate, unfinished integration work.
+
 The dependency and its transitive graph are locked. This increment is not a full
 cryptographic dependency audit; upstream advisories and release provenance still
 need the release review already listed in the backlog.
