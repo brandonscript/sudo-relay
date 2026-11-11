@@ -8,6 +8,11 @@ struct NativeClient {
     static func main() {
         guard getuid() != 0 else { exit(2) }
         umask(0o077)
+        if CommandLine.arguments.dropFirst() == ["--enroll-receipt-key"] {
+            do { try enrollFixture(); exit(0) }
+            catch { report("native-key-enrollment-failed", error: error); exit(1) }
+        }
+        guard CommandLine.arguments.count == 1 else { exit(2) }
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         Task { @MainActor in
@@ -28,6 +33,26 @@ struct NativeClient {
         app.run()
     }
 
+    static func enrollFixture() throws {
+        guard Bundle.main.object(forInfoDictionaryKey: "SudoRelayReceiptFixture") as? Bool == true,
+              Bundle.main.object(forInfoDictionaryKey: "SudoRelayLabProtocol") as? String == "broker-cbor-v2"
+        else { throw ReviewError.invalidAuthority }
+        let root = Bundle.main.bundleURL.deletingLastPathComponent()
+        let path = root.appendingPathComponent("native-key.json")
+        let pin = root.appendingPathComponent("state/keys/native.pub")
+        guard !FileManager.default.fileExists(atPath: path.path), !FileManager.default.fileExists(atPath: pin.path)
+        else { throw ReviewError.invalidAuthority }
+        let data = try BiometricSigning.makeBiometricKey()
+        let context = BiometricSigning.context()
+        context.interactionNotAllowed = true
+        defer { context.invalidate() }
+        let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: data, authenticationContext: context)
+        try FixtureSigningKey(wrappedKey: data, publicKey: key.publicKey.x963Representation).save(to: path)
+        let hex = key.publicKey.x963Representation.map { String(format: "%02x", $0) }.joined()
+        try Data("p256-sha256:\(hex)".utf8).write(to: pin, options: .withoutOverwriting)
+        report("native-key-fixture-enrolled")
+    }
+
     static func review() async throws {
         let root = Bundle.main.bundleURL.deletingLastPathComponent()
         let mode = Bundle.main.object(forInfoDictionaryKey: "SudoRelayLabProtocol") as? String ?? "native-json-v1"
@@ -40,15 +65,22 @@ struct NativeClient {
         let touchID = capability.biometryType == .touchID
         capability.invalidate()
         guard available, touchID, SecureEnclave.isAvailable else { throw ReviewError.invalidProof }
-        let keyData = try BiometricSigning.makeBiometricKey()
+        let saved = mode == "broker-cbor-v2"
+            ? try FixtureSigningKey.load(from: root.appendingPathComponent("native-key.json")) : nil
+        let keyData = try saved?.wrappedKey ?? BiometricSigning.makeBiometricKey()
         let lookup = BiometricSigning.context()
         lookup.interactionNotAllowed = true
         defer { lookup.invalidate() }
         let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: keyData, authenticationContext: lookup)
-        // Disposable fixture enrollment before service launch; not a protected trust store.
+        // Durable fixtures reopen an explicitly enrolled key; missing state never creates a replacement.
         if mode == "broker-cbor-v2" {
             let hex = key.publicKey.x963Representation.map { String(format: "%02x", $0) }.joined()
-            try Data("p256-sha256:\(hex)".utf8).write(to: root.appendingPathComponent("state/keys/native.pub"), options: .withoutOverwriting)
+            guard let saved else { throw ReviewError.invalidAuthority }
+            try saved.verify(key.publicKey)
+            let pinFile = try FileHandle(forReadingFrom: root.appendingPathComponent("state/keys/native.pub"))
+            defer { try? pinFile.close() }
+            let pin = try pinFile.read(upToCount: 256) ?? Data()
+            guard pin == Data("p256-sha256:\(hex)".utf8) else { throw ReviewError.invalidAuthority }
         } else {
             try key.publicKey.rawRepresentation.write(to: root.appendingPathComponent("fixture-public.key"))
         }

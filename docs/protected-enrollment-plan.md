@@ -282,3 +282,25 @@ Local schema, wrong-mode and negative-endpoint tests pass. The earlier C fetch
 roundtrip passed full CI run 42942654110; record/UID/writable-file cases passed
 full CI run 42943601838. This binds review configuration to administrator-owned data but does not
 complete sponsor provenance, signing-key persistence or native deployment.
+
+### Signing-key pin and restart preparation
+
+The protected native enrollment now carries a validated P-256 public-key pin.
+The Swift signer checks its loaded public key before signing. Invalid/missing
+pins reject locally; a valid but wrong pin rejects under the separate approving
+UID in disposable macOS CI. Full CI run 42944963462 passed.
+
+Apple documents that a Secure Enclave key's data representation is an encrypted
+block that the same enclave can reopen, and demonstrates storing that block as a
+Keychain generic-password item. See [Apple's storage sample](https://developer.apple.com/documentation/cryptokit/storing-cryptokit-keys-in-the-keychain).
+Our next hardware experiment separates explicit test enrollment from normal
+review launches and saves only this wrapped representation plus its public key.
+No Keychain item is created. This temporary same-user file tests restart behavior;
+it is not the production store and cannot protect review/enrollment integrity.
+
+Production still needs a signed reviewer identity and reviewed Keychain access
+policy, protected enrollment references and public-key pins, authenticated
+recovery, and tests against other processes and account replacement. Reopening
+an opaque key does not prove its biometric access policy to the remote verifier.
+The existing `.biometryCurrentSet` creation path must remain mandatory for this
+mode; failure must not recreate a key or downgrade to session approval.

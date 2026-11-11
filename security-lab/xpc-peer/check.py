@@ -211,6 +211,10 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
             "service": f'identifier "local.sudo-relay.peer-service" and cdhash H"{cdhash(app / helper_relative)}"',
             "verifier": f'cdhash H"{cdhash(app / helper_relative / "Contents/Helpers/receipt-verifier")}"',
         }))
+        if sys.argv[1:] == ["--prepare-native-durable"]:
+            executable = app / "Contents/MacOS" / str(info["CFBundleExecutable"])
+            run(str(executable), "--enroll-receipt-key")
+            assert (app.parent / "native-key.json").is_file()
         native_app = str(app)
     print(json.dumps({"cases": results, "prepared_native_app": native_app, "uid": os.getuid(), "commands_executed": 0,
                       "human_approval_tested": False, "protected_deployment_tested": False}, indent=2))

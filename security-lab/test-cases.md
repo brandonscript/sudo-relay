@@ -442,3 +442,25 @@ This pins which public key the protected native flow expects. It does not store
 or protect a private key, prove hardware authentication, or atomically synchronize
 a changed enrollment with a pending native review. The broker still checks its
 current trust store and revocation state before consuming a signature.
+
+### Native test-key restart preparation
+
+Signer-pin root cases passed full CI run 42944963462. The durable native manual
+fixture now has an explicit enrollment invocation and a load-only approval path.
+Storage tests with fake wrapped bytes cover reopening, duplicate-enrollment
+non-overwrite, absent/deleted/corrupt/oversized records, invalid version/public
+point and mismatched signer. Failed loads must leave the file unchanged or absent.
+These are storage behavior tests, not Secure Enclave persistence evidence.
+
+Hardware runbook: prepare a fresh durable native fixture; record its public-key
+file hash; approve one receipt; close and reopen the same app; approve a new
+receipt. Require the same public key, two distinct consumed request IDs, fresh
+Touch ID for each signing operation, and no execution/canary. Then, in disposable
+fixtures, remove or corrupt the saved wrapped key and require failure with no
+new key, signature or receipt. Hardware steps remain unrun pending participant
+readiness. Do not substitute a software key when hardware reopening fails.
+
+Local verification for this increment: all fourteen Swift tests pass, including
+the new storage checks; all nineteen ordinary-user XPC regression cases pass.
+NativeClient compiles with Swift 6 warnings-as-errors. Neither the new explicit
+hardware enrollment nor the restart/fingerprint sequence has been run.

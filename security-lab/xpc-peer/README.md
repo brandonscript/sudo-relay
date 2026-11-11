@@ -259,3 +259,22 @@ a changed, missing or invalid policy it stops accepting receipts for the rest of
 that process lifetime, including after the old file is restored. The 19-case
 harness covers existing connections and the durable ledger. This does not make
 policy updates atomic with receipt consumption or prevent rollback on restart.
+
+### Reopening the native fixture key
+
+`--prepare-native-durable` now explicitly enrolls one disposable Secure Enclave
+key before returning the unopened app. It saves the encrypted key representation
+and its public key in `native-key.json`, alongside the fixture's public-key pin.
+Normal app launches only load those files: missing, invalid or mismatched state
+fails instead of creating a replacement. The older JSON lab remains ephemeral.
+
+This is same-user test storage, not protected enrollment or a Keychain item. It
+does not protect files from the agent, attest hardware to the verifier, or provide
+power-loss durability. Partial enrollment deliberately fails closed; discard the
+whole disposable fixture and explicitly prepare another, rather than deleting
+one file or silently re-pairing a key. Do not copy this storage into production.
+
+Manual restart check: prepare the app, approve one receipt with Touch ID, close
+it, reopen the same app and approve a fresh receipt. Both must use the same public
+key and each must request a fresh fingerprint. No command may run. This hardware
+check has not yet been performed; automated tests use fake wrapped bytes only.
