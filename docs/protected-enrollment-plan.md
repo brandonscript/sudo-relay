@@ -1,306 +1,101 @@
 # Protected enrollment and separate verification
 
-Working design, November 10, 2026. This is the next implementation sequence,
-not a description of protection already shipped. Current work remains receipt-only.
+Status: November 10, 2026. All experiments described here are receipt-only.
+The protected software-signing path works in disposable Linux/macOS CI. The
+interactive Touch ID path still uses separate, writable fixture enrollment.
+**Those two results do not establish a protected interactive approval system.**
 
-## What must be trusted
+## What works now
 
-The agent can launch programs, submit requests and edit its own files. Therefore
-neither an app bundle nor a same-user policy file is a protected enrollment store.
-An allowed executable can be launched by the agent; its identity alone does not
-prove a person reviewed or approved a request.
+The protected fixture follows this path:
 
-The verifier must retain its own frozen request, enrolled approving public key,
-required authentication mode, machine/enrollment identity, and consumption state.
-The reviewer must obtain the request from an authenticated authority and display
-the exact decision it will sign. A caller supplies an opaque request reference,
-never a replacement request, authority key, policy or signing payload.
+1. A root test controller installs a bounded enrollment record with the machine,
+   socket, approving UID, public signing key, key ID and display labels. The agent
+   cannot pair itself. The native caller supplies only its record path and request ID.
+2. The Rust bridge checks the protected record and authenticates the root socket
+   before sending a status request. It validates the returned request ID, machine,
+   canonical bytes, digest, receipt-only mode and validity window.
+3. The Swift model displays that immutable request and checks the loaded signing
+   key against the protected public-key pin. Its output-sharing choice selects
+   the exact canonical bytes to sign. The CI helper uses a disposable software key.
+4. Submission rereads enrollment, fetches current pending status and verifies the
+   proof locally. The separate broker independently checks its enrolled key,
+   revocation, request, sharing choice and expiry before consuming once.
+5. Success requires a matching receipt-only acknowledgement. A lost or invalid
+   reply is unconfirmed, even if consumption committed. Neither layer retries
+   signing or submission automatically.
 
-The production trust store and verifier installation require protection outside
-the agent account. Implement that later in disposable machines before proposing
-personal-machine installation. No sudo/PAM changes are authorized by this plan.
+Receipt signatures use `sudo-relay/receipt-decision/v1` and `approve_receipt`.
+The execution broker rejects this method; relabeling it as `approve` also fails
+signature verification. Receipt consumption returns no execution job.
+See the [record and API boundaries](native-receipt-enrollment.md).
 
-## Next receipt-only increment
+Broker key revocation and pairing serialize with consumption in SQLite. Revocation
+persists denial before file cleanup; pairing stays blocked until its file is
+durable and enrollment commits. Both retire pending requests. Already-consumed
+work is outside that guarantee. Process-kill tests do not prove physical power-loss
+or restored-backup safety.
 
-1. Reuse `AuthenticatedReview` and `ReviewReceiptVerifier`; keep their lab domain
-   separate from the production protocol. Move verification into another process
-   without weakening request, signature, output-choice, expiry or one-use checks.
-2. Keep the existing XPC peer experiment as an independent regression suite.
-   Add a side-effect-free handshake before request retrieval or proof delivery.
-   A reconnect starts a new handshake; no stale authenticated flag survives it.
-3. Use a fixture controller to create explicit test enrollment. The controller
-   pins authority and approving public keys independently of submitted requests.
-   Software-key integration tests come first; native Touch ID follows with the
-   user's own gesture. Never enroll whichever key first arrives over IPC.
-4. Expose only request retrieval, decision submission, cancellation and status.
-   Bound message sizes before decoding, reject unknown fields and unexpected
-   states, and keep parsing failures separate from denied/expired outcomes.
-5. Preserve verifier state independently of the UI lifetime. Closing the UI,
-   losing the connection or receiving an ambiguous reply must not trigger a new
-   signature or automatic submission. Reconnect queries the original request.
+## Evidence and its limits
 
-The first implementation can use ephemeral fixture state, but must label that
-limitation. Durable consumption and crash/rollback handling are separate gates
-before production; a second process is not itself protected deployment.
+| Check | Evidence | What it does not prove |
+|---|---|---|
+| Protected files, socket and separate approving UID | `tests/privileged.rs`; disposable Linux/macOS CI | Production installation, sponsor provenance or UID-reuse protection |
+| Swift fetch, signer pin, software proof, submission and replay | Full CI 42946565284; `ProtectedReviewCheck.swift` | Protected hardware key, native UI or human approval |
+| Receipt/execution domain separation | Full CI 42946166927; protocol and broker tests | Integration with a real sudo launch |
+| Lost reply before/after consumption, malformed acknowledgement and actual socket close | Full CI 42947279181; `native_review::tests` | Every possible crash, filesystem failure or user-visible disconnect |
+| XPC client/service/verifier code pins and observed policy revocation | Nineteen local cases; `security-lab/xpc-peer` | Atomic policy revocation, protected installation or rollback prevention |
+| Touch ID, denial, cancellation and expiry during authentication | [Native review runbook](native-review-boundary.md) | The newer cross-process protected flow; those hardware results came from the earlier lab |
+| Reopening a saved key without silently replacing it | Build and software fixture tests; full CI 42945677976 | Hardware restart behavior, protected Keychain persistence or other-process isolation |
 
-## Enrollment and update rules to implement
+CI IDs refer to historical passing runs, not an assertion about every later commit.
+The root fixtures run on disposable workers, never as a service on the personal Mac.
 
-| Event | Required behavior |
-|---|---|
-| First enrollment | An authenticated administrator installs the authority and approving-key pins, required mode and allowed reviewer/verifier identities. The agent cannot enroll itself. |
-| Multiple hosts or sponsors | Each machine/sponsor enrollment has a distinct identifier and request/receipt namespace. Display names are not security identities. |
-| New approving device | Explicit authenticated pairing; an unknown public key cannot replace the current key through an approval request. |
-| Revocation | Reject new decisions under the revoked enrollment/key; cancel pending work. Define separately what already consumed work means. |
-| Reviewer update | Verify the authorized release and update policy before accepting its identity. No automatic trust of a newly observed code hash. |
-| Downgrade or rollback | Reject a disallowed older reviewer/policy version; restoring a receipt store must not silently restore spent approvals. Mechanism still to select and test. |
-| Lost key or changed fingerprints | Stop and require authenticated recovery. Never silently switch to session mode or enroll a replacement key. |
-| Account replacement | Reused username/UID does not inherit enrollment. Sponsor provenance must still bind to the account that elevated during installation. |
+## Next implementation gates
 
-Exact code hashes remain useful for disposable tests. Production must choose and
-review an update policy: narrow Developer ID/team plus role identifiers, explicit
-approved versions/hashes, or a combination. Signing certificates, distribution
-and notarization are not configured yet. Do not invent a team identity or ask the
-user for a private signing key in chat.
+1. **Protect the persistent signer.** Use a signed/hardened reviewer with a reviewed
+   Keychain access policy, administrator-pinned public key and protected installation.
+   Test another process, replaced code, missing/corrupt state and changed fingerprints.
+   Failure must require explicit recovery, never a replacement key or session fallback.
+2. **Join the interactive path to protected enrollment.** Reuse `BrokerReview` and
+   the protected submission bridge. Run the full flow in a disposable macOS environment
+   before proposing a personal-machine install. The current XPC native client and
+   protected headless helper are separate fixtures, not interchangeable evidence.
+3. **Make policy changes authoritative at consumption.** Persist enrollment/policy
+   generations and coordinate updates with the verifier transaction. Define which
+   approvals an update cancels; test old policy restoration and service restart.
+   Current XPC revocation is observation-based: a change restored between checks
+   can be missed, and a check-to-consumption race remains.
+4. **Bind the sponsor.** Derive it from authenticated installer elevation, not a
+   caller-selected username. Distinguish the approving account from the sponsoring
+   sudoer; test account deletion, replacement, UID reuse and privilege revocation.
+5. **Finish recovery and distribution.** Select authorized code-update/rollback
+   rules, explicit device pairing/revocation, lost-key recovery, interrupted upgrades
+   and removal. Signing identity, notarization and release installation remain open.
 
-## Acceptance cases
+Exact code hashes work for disposable fixtures. Production still needs an explicit
+update policy: narrowly scoped signing identity and role identifiers, approved
+versions/hashes, or both. Never trust a new identity merely because it appeared.
+Reopening a Secure Enclave key does not attest its biometric policy to the verifier;
+that assurance depends on protected enrollment and the reviewed key-creation path.
 
-- Correct request and proof produce one receipt; simultaneous copies produce one.
-- Unknown key, substituted authority, altered request/output/mode/host/enrollment,
-  expired proof and revoked enrollment produce none.
-- An agent can open the genuine reviewer but cannot obtain a biometric signature
-  without the user's gesture. Opening/handshaking alone creates no receipt.
-- Wrong code identity is rejected on either side before sending sensitive data;
-  same account or bundle identifier does not bypass the pin.
-- A replacement connection must reauthenticate; disconnects before/after receipt
-  creation never refund consumption or automatically retry an approval.
-- UI exit and verifier exit have separate outcomes. Restart recovery must report
-  uncertainty where state cannot establish whether consumption committed.
-- Enrollment/update files writable through ownership, mode, ACL or replaceable
-  parent paths are rejected in the protected-deployment fixture.
+## Acceptance cases before protected deployment
 
-The final two deployment/recovery properties cannot be established by the current
-same-user lab. Keep their checks open until the protected fixture actually exists.
+- Correct proof creates one receipt; concurrent copies and restart replay cannot
+  create another. Changed request, output choice, mode, host or enrollment rejects.
+- Unknown/revoked keys, replaced authority, expired requests and malformed/oversized
+  messages reject. Parsing failure is not presented as a user denial.
+- An agent may launch the genuine reviewer but cannot obtain a biometric signature
+  without the person's gesture. Opening or handshaking alone creates no receipt.
+- Authenticate each new connection before delivering requests, proofs or secrets;
+  no stale trust survives reconnect. Reject substituted client/service/verifier code.
+- Disconnects before or after consumption never refund it or trigger another approval.
+  Closing the UI does not imply the verifier rolled back. Report uncertain outcomes.
+- Reject writable ownership/modes/ACLs and replaceable parent paths. Test launch
+  replacement races and runtime injection separately from file-read checks.
+- Preserve per-machine/per-sponsor isolation, including duplicate display names and
+  request IDs. Keep target identity in the signed request; labels alone are not identity.
 
-## P-256 compatibility increment
-
-The broker now supports administrator-selected P-256/SHA-256 public keys alongside
-legacy Ed25519 keys, signing the existing canonical CBOR v2 decision bytes. This
-avoids making the native lab's JSON protocol a production authorization format.
-`pair-p256` records an explicit algorithm prefix; incoming requests cannot choose
-or downgrade it. DER parsing and elliptic-curve verification use
-[RustCrypto p256 0.14](https://docs.rs/p256/0.14.0/p256/ecdsa/index.html), with
-`ecdsa` and `std` features and default features disabled.
-
-`ui/test/p256-fixture.json` contains CryptoKit-generated signatures over both
-existing sharing decisions. Rust and Node verification pass against those exact
-bytes, with changed sharing rejected. The generation script uses a disposable
-software key, writes no private key, and makes no biometric claim. Broker tests
-also cover wrong keys, altered request/output, malformed signatures/points,
-explicit non-overwriting pairing and replay; no executor is called.
-
-This is not complete native integration. The native reviewer must still obtain
-and validate the production request through authenticated IPC, display the same
-model, and sign those exact CBOR bytes. Protected enrollment must distinguish a
-biometric-required reviewer from a software/session signer; a P-256 key or a
-label is insufficient. WebAuthn requires its own challenge/origin/RP/UV checks,
-not simply this bare-signature verification path. Optional modes remain explicit;
-there is no silent fallback.
-
-The TypeScript host adapter now accepts explicit enrolled Ed25519 or P-256
-signature formats. Both use the existing CBOR decision, and neither exposes an
-algorithm selector to the MCP request. Adapter tests verify P-256 signatures for
-both output choices, reject altered commands/output, reject unknown algorithms
-before signing, enforce signature bounds and stop submission if approval expires
-while the signer is waiting. This removes the old Ed25519-only transport check;
-it does not turn the generic signing callback into a protected native channel.
-
-The [native protocol bridge](../security-lab/native-protocol/README.md) now lets
-Swift reuse Rust's request validation and CBOR encoder. Its foreign-call fixture
-preserves the complete request model and both sharing decisions, and checks
-CryptoKit public signatures. It performs no authentication or signing. The next
-UI integration must take this model only from an authenticated verifier, render
-all execution-relevant fields, and retain the same immutable decision bytes
-through review. Do not forward arbitrary caller bytes to the biometric signer.
-
-`BrokerReview` now implements the existing native form's presentation interface.
-It decodes the Rust-validated envelope into immutable Swift fields, displays
-structured arguments or a complete script, names the script interpreter, and
-provides all request details. It retains the exact two decision byte strings and
-checks expiry when selecting the checkbox choice. The automated form fixture
-checks both command kinds, details and expired controls without opening a window.
-The old native lab's thirteen tests still pass. Authenticated production request
-retrieval and separate durable consumption are not connected to this model yet;
-its initializer's name is a caller contract, not an authentication mechanism.
-
-The native protocol fixture now runs `receipt-verifier`, a feature-gated,
-ordinary-user Rust subprocess that reuses `Broker::handle` and its SQLite ledger.
-It drops execution jobs instead of dispatching them. A software CryptoKit key
-signs the native model's exact bytes: changed sharing rejects, one proof consumes,
-replay rejects, and termination/restart preserves spent state (`uncertain`, never
-pending). Transferring that proof to a new request rejects as well. A canary
-remains absent. This joins native parsing/signing and real durable verification
-over a test-controlled pipe; authenticated XPC retrieval and protected enrollment
-remain separate, unfinished integration work.
-
-The XPC harness now joins those components in its `durable-review` case. After
-the pinned read-only handshake, the client retrieves a broker request, constructs
-the native model, signs with a disposable software key and submits through XPC
-to the bundled Rust verifier child. One consumption, altered-sharing rejection,
-replay rejection and an absent canary pass. The service never restarts a failed
-child or switches verification formats. Runtime child identity, protected
-installation/enrollment and hardware signing on this joined path remain open;
-bundle verification in the fixture is not a substitute for those boundaries.
-
-The durable XPC mode now additionally requires a verifier code pin, validates the
-file before launch and the running child before request delivery, and clears the
-inherited environment. Replacement positive/negative controls and missing-pin
-rejection pass; thirteen XPC cases pass locally. This closes the unchecked-child
-path in the fixture, not the protected-installation requirement: static-check to
-launch replacement races and injection remain unevaluated. No code-identity check
-proves that a human approved, and no protected enrollment has been installed.
-
-The explicitly selected durable native app now connects the accepted UI and
-Touch ID signer to that CBOR/XPC/ledger path. The build and acknowledgement checks
-pass; fresh hardware approval/cancellation/expiry evidence is still required.
-Its ephemeral public-key enrollment is non-overwriting but remains self-created
-in writable lab state. Do not call this administrator-protected pairing.
-
-The dependency and its transitive graph are locked. This increment is not a full
-cryptographic dependency audit; upstream advisories and release provenance still
-need the release review already listed in the backlog.
-
-### Bounded protected file reads
-
-Production broker configuration and approval public keys now use one bounded
-reader: root-controlled ancestors, a regular root-owned file without group/world
-write access, no-follow opening of the resolved final component, and a size check
-both before and during reading. Limits are 64 KiB for configuration and 1 KiB for
-a public key. macOS retains the conservative rejection of extended ACL entries.
-
-The ordinary-user rejection test and lint checks pass locally. Disposable Linux
-and macOS CI run 42938600587 passed valid reads, oversized files, directories, FIFOs,
-writable ancestors/files and changed ownership; macOS also covered ACLs. Those root tests
-are not run on the personal machine. This does not implement native enrollment
-or claim atomicity against another root process changing policy while it is read.
-
-The native client and XPC service now read `SudoRelayProtectedPeerPolicyPath` from
-their bundle metadata when present. That path goes through the same root-protected
-reader via a bounded C bridge. Missing, invalid or unprotected policy fails closed,
-even when a valid fixture policy is available beside the app. Without that setting,
-only bundles explicitly marked `SudoRelayReceiptFixture` may use fixture policy.
-Both settings are sealed by the fixture's code signature. Protected deployment
-must enforce the authorized bundle identity; an attacker who can substitute the
-trusted binary is outside what this loader alone protects.
-
-Local checks cover the explicit fixture positive control, absent configuration,
-wrong-typed path, missing file and user-owned policy rejection without fallback.
-The thirteen XPC cases still pass. C-bridge successful read/buffer-bound checks
-are added to disposable root CI; local error-path checks verify untouched buffers.
-This policy contains peer code requirements only. It does not protect the lab's
-self-enrolled approving key or broker state, bind sponsor provenance, or constitute
-a supported production installation. Those remain required work.
-
-### Observed policy revocation
-
-The XPC service re-reads peer policy before accepting connections and before
-issuing reviews, disclosing status or accepting receipts. Any missing, malformed
-or changed client/service/verifier requirement permanently invalidates that
-service instance. It denies its in-memory request and stops its durable child;
-restoring the old policy does not reactivate it. Cancellation remains available.
-
-Nineteen receipt-only XPC cases pass locally, including five policy mutations on
-an existing authenticated connection and one durable-ledger revocation case.
-The durable request stays pending with zero consumption records and no canary.
-The new C ABI positive/buffer cases also passed both disposable root CI jobs in
-run 42939101885. Full macOS CI was still running when this evidence was recorded.
-
-This is observation-based revocation, not an atomic revocation transaction. A
-change and restoration between checks is not detected, and policy can change
-after a check but before consumption. Persisted policy epochs, rollback across
-service restart and coordination with the verifier remain open. These checks
-also do not establish sponsor privilege revocation or protect fixture key storage.
-
-### Approval-key changes and consumption
-
-The broker now serializes approval key lookup/verification/consumption against
-administrator pairing and revocation using the same SQLite ledger. Revocation
-records persistent denial before file cleanup; pairing keeps a key blocked until
-its file is durable and enrollment commits. Both retire all pending requests.
-This fixes the old-proof re-pairing gap at the broker layer; local receipt-only
-regressions and the native protocol/ledger check pass. Root CI verification of
-the revised P-256 case remains pending. It does not make XPC peer-policy changes
-atomic with consumption, retire already-consumed jobs, or bind sponsor identity.
-
-The revised protected P-256 root case passed Linux and macOS jobs in run
-42941088476. Four local process-kill cases also cover pairing/revocation commit
-stages and explicit recovery without executing a command. This narrows the
-interrupted-enrollment uncertainty; it does not establish protected native key
-persistence, sponsor identity, power-loss durability or anti-rollback protection.
-
-### Root-store socket fixture
-
-The disposable protected P-256 fixture now includes a separate receipt-only socket
-worker using the real broker store and UID boundary. A protected client verifies
-the root peer before sending data and retrieves the frozen request through the
-existing status endpoint; no new review protocol is needed. The approver signs
-only after that retrieval. The server's receipt mode discards approved jobs and
-is feature-gated; it is not exposed by the production CLI.
-
-Local untrusted-socket rejection and compilation/lint pass. The new protected
-roundtrip requires disposable CI verification. It is the protected-store transport
-prerequisite, not finished native enrollment, UI integration, sponsor binding or
-Touch ID evidence. Process-crash cases from the preceding increment passed the
-full Linux/macOS CI run 42941491819.
-
-### Native retrieval from the protected socket
-
-The root-store socket fixture passed full Linux/macOS CI run 42942110672. The
-native protocol bridge now exposes a read-only fetch operation accepting only a
-socket path, request ID and enrolled machine pin. It authenticates the root peer,
-fetches pending status, checks both returned IDs and validates the envelope,
-digest, canonical bytes, machine and expiry before returning review data. It
-cannot submit an approval. A new `BrokerReview` initializer uses that operation
-and retains the existing rendering and decision-byte validation.
-
-Local malformed-reference/no-output tests, Swift rejection of an unprotected
-endpoint, native protocol checks and lint pass. The extended root CI fixture now
-uses this same C ABI and checks wrong-machine, unknown-request and small-buffer
-rejection before a successful read; those new cases await CI. The socket and
-machine pin still require administrator enrollment. This initializer does not
-create that enrollment, persist a signing key or connect the interactive lab UI
-to a root service automatically. No personal-machine root service was installed.
-
-### Root-owned native receipt enrollment
-
-The fetch API now accepts an enrollment-file path and request ID, replacing the
-earlier caller-provided socket/machine parameters. A strict root-protected record
-supplies the target, allowed approver UID and display labels; the server must also
-identify its receipt-only mode. Native rendering consumes the already-validated
-model from that fetch. See [record format and limits](native-receipt-enrollment.md).
-
-Local schema, wrong-mode and negative-endpoint tests pass. The earlier C fetch
-roundtrip passed full CI run 42942654110; record/UID/writable-file cases passed
-full CI run 42943601838. This binds review configuration to administrator-owned data but does not
-complete sponsor provenance, signing-key persistence or native deployment.
-
-### Signing-key pin and restart preparation
-
-The protected native enrollment now carries a validated P-256 public-key pin.
-The Swift signer checks its loaded public key before signing. Invalid/missing
-pins reject locally; a valid but wrong pin rejects under the separate approving
-UID in disposable macOS CI. Full CI run 42944963462 passed.
-
-Apple documents that a Secure Enclave key's data representation is an encrypted
-block that the same enclave can reopen, and demonstrates storing that block as a
-Keychain generic-password item. See [Apple's storage sample](https://developer.apple.com/documentation/cryptokit/storing-cryptokit-keys-in-the-keychain).
-Our next hardware experiment separates explicit test enrollment from normal
-review launches and saves only this wrapped representation plus its public key.
-No Keychain item is created. This temporary same-user file tests restart behavior;
-it is not the production store and cannot protect review/enrollment integrity.
-
-Production still needs a signed reviewer identity and reviewed Keychain access
-policy, protected enrollment references and public-key pins, authenticated
-recovery, and tests against other processes and account replacement. Reopening
-an opaque key does not prove its biometric access policy to the remote verifier.
-The existing `.biometryCurrentSet` creation path must remain mandatory for this
-mode; failure must not recreate a key or downgrade to session approval.
+Passkeys remain optional. Session-only mode has weaker assurance; inline-only
+presentation closed one observed automation route, not all routes. A code signature,
+app icon, hidden card field or P-256 public key alone is not proof of human approval.

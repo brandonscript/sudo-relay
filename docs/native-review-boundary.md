@@ -1,5 +1,9 @@
 # Native review and receipt boundary
 
+This runbook records the original single-process lab and later experiments in
+chronological order. For current integration status and remaining deployment
+gates, use [protected enrollment](protected-enrollment-plan.md).
+
 November 10, 2026. Receipt-only experiment, using the existing macOS Touch ID lab. No broker connection, command execution, sudo password, service installation or persistent key enrollment. The inline card remains a preview; this is not a replacement for the accepted chat design or a requirement to use biometrics.
 
 ## What changed

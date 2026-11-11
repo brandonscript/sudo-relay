@@ -1,6 +1,6 @@
 # Native receipt enrollment
 
-This record configures the read-only native receipt reviewer in disposable tests.
+This record configures native receipt review and submission in disposable tests.
 It is not a production installer or permission to execute commands. The root test
 controller creates it; the reviewing application cannot enroll itself.
 
