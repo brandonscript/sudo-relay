@@ -39,3 +39,25 @@ The remembered browser preference is a convenience, not approval. It belongs to 
 ## Reporting
 
 Report suspected vulnerabilities through [GitHub private vulnerability reporting](https://github.com/brandonscript/sudo-relay/security/advisories/new). Do not post passwords, private keys, or exploitable findings publicly. See [SECURITY.md](../SECURITY.md) for what to include.
+
+## macOS ACL handling
+
+Protected-path checks now inspect extended ACLs on both the original and resolved
+path and every ancestor. Private ledger/key files also reject ACL entries. This
+is deliberately conservative: even a restrictive or owner-only entry is rejected
+rather than attempting to interpret inherited allow/deny ordering. Inspection
+errors fail closed. No ACL is modified by the broker.
+
+The implementation uses Darwin's `acl_get_fd_np` on an open file descriptor.
+Apple's [ACL implementation](https://github.com/apple-oss-distributions/Libc/blob/main/posix1e/acl_file.c)
+and [file-security properties](https://github.com/apple-oss-distributions/Libc/blob/main/gen/filesec.c)
+show that absent ACL metadata can produce `ENOENT`; using an open descriptor
+keeps that case distinct from failing to open a missing pathname. The local test
+adds read/write access to a disposable file while its mode remains 0600, verifies
+rejection, removes that fixture ACL and verifies acceptance again. Missing files
+also fail. No personal authentication files are touched.
+
+A root-only CI test separately checks an ACL on a protected file and on its
+ancestor directory. Its result is pending. These checks do not eliminate races
+against an already-privileged actor, establish protected native-app enrollment,
+or evaluate every filesystem/ACL implementation. Linux behavior is unchanged.

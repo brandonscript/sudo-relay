@@ -80,8 +80,57 @@ pub fn protected_path(path: &Path, owner: u32) -> Result<PathBuf> {
             "{} must be owned by uid {owner} and not group/world writable",
             component.display()
         );
+        #[cfg(target_os = "macos")]
+        reject_extended_acl(component)?;
     }
     Ok(resolved)
+}
+
+#[cfg(target_os = "macos")]
+fn reject_extended_acl(path: &Path) -> Result<()> {
+    use std::ptr;
+    extern "C" {
+        fn acl_get_fd_np(fd: libc::c_int, kind: libc::c_int) -> *mut libc::c_void;
+        fn acl_valid(acl: *mut libc::c_void) -> libc::c_int;
+        fn acl_get_entry(
+            acl: *mut libc::c_void,
+            index: libc::c_int,
+            entry: *mut *mut libc::c_void,
+        ) -> libc::c_int;
+        fn acl_free(acl: *mut libc::c_void) -> libc::c_int;
+    }
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)?;
+    // Darwin sys/acl.h: ACL_TYPE_EXTENDED = 0x100, ACL_FIRST_ENTRY = 0.
+    let acl = unsafe { acl_get_fd_np(file.as_raw_fd(), 0x100) };
+    // Darwin reports an absent ACL as ENOENT; an open descriptor rules out a missing path.
+    if acl.is_null() && std::io::Error::last_os_error().raw_os_error() == Some(libc::ENOENT) {
+        return Ok(());
+    }
+    ensure!(
+        !acl.is_null(),
+        "cannot inspect ACL for {}: {}",
+        path.display(),
+        std::io::Error::last_os_error()
+    );
+    let valid = unsafe { acl_valid(acl) };
+    let mut entry = ptr::null_mut();
+    let result = if valid == 0 {
+        unsafe { acl_get_entry(acl, 0, &mut entry) }
+    } else {
+        0
+    };
+    let error = std::io::Error::last_os_error();
+    unsafe { acl_free(acl) };
+    // Reject even restrictive entries until effective ACL evaluation is implemented and reviewed.
+    ensure!(
+        valid == 0 && result == -1 && error.raw_os_error() == Some(libc::EINVAL),
+        "{} must have no extended ACL entries",
+        path.display()
+    );
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -210,6 +259,8 @@ impl Broker {
             "{} must be a private regular file",
             path.display()
         );
+        #[cfg(target_os = "macos")]
+        reject_extended_acl(path)?;
         Ok(())
     }
     fn transition(
@@ -414,5 +465,38 @@ impl Broker {
     }
     pub fn development(&self) -> bool {
         self.development
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod acl_tests {
+    use super::*;
+    use std::{os::unix::fs::PermissionsExt, process::Command};
+
+    #[test]
+    fn private_file_rejects_acl_access_not_visible_in_mode_bits() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("fixture-key");
+        fs::write(&file, "public test data").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+        let owner = unsafe { libc::geteuid() };
+        Broker::check_private_file(&file, owner).unwrap();
+        assert!(Command::new("/bin/chmod")
+            .args(["+a", "everyone allow read,write"])
+            .arg(&file)
+            .status()
+            .unwrap()
+            .success());
+        assert_eq!(fs::metadata(&file).unwrap().mode() & 0o777, 0o600);
+        let result = Broker::check_private_file(&file, owner);
+        assert!(Command::new("/bin/chmod")
+            .arg("-N")
+            .arg(&file)
+            .status()
+            .unwrap()
+            .success());
+        assert!(result.unwrap_err().to_string().contains("extended ACL"));
+        Broker::check_private_file(&file, owner).unwrap();
+        assert!(reject_extended_acl(&dir.path().join("missing")).is_err());
     }
 }

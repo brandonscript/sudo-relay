@@ -40,7 +40,7 @@ Initialize with those three numbers, replacing `AGENT_UID`, `APPROVER_UID`, and 
 sudo /usr/local/libexec/sudo-relay/broker init /etc/sudo-relay/config.json /var/lib/sudo-relay /var/run/sudo-relay/broker.sock AGENT_UID APPROVER_UID SOCKET_GID
 ```
 
-This creates a private state directory, a public socket directory, and a machine UUID. Parent directories must be root-owned and not group/world writable. On macOS, create `/var/lib` as a root-owned directory if absent, or supply `/Library/Application Support/sudo-relay` as the quoted state path instead. Do not loosen permissions to make validation pass.
+This creates a private state directory, a public socket directory, and a machine UUID. Parent directories must be root-owned and not group/world writable. On macOS, create `/var/lib` as a root-owned directory if absent, or supply `/Library/Application Support/sudo-relay` as the quoted state path instead. Do not loosen permissions to make validation pass. On macOS, protected paths, their ancestors, and private broker files must have no extended ACL entries. This deliberately rejects restrictive ACLs too; effective ACL interpretation is not implemented. The broker never removes ACLs automatically. Review a rejected path with `ls -lde` and choose a dedicated protected location rather than altering shared system directories.
 
 ## Choose the approval window
 

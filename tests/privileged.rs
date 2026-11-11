@@ -235,3 +235,44 @@ fn unprivileged_peer_probe() {
         std::thread::sleep(Duration::from_millis(20));
     }
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "root only; run in disposable macOS CI"]
+fn root_owned_paths_reject_acl_writable_ancestors() {
+    assert_eq!(unsafe { libc::geteuid() }, 0);
+    let dir =
+        PathBuf::from("/private/var").join(format!("sudo-relay-acl-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&dir).unwrap();
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+    let _cleanup = Cleanup {
+        dir: dir.clone(),
+        child: None,
+    };
+    let file = dir.join("trust.pub");
+    fs::write(&file, "public test data").unwrap();
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+    protected_path(&file, 0).unwrap();
+    for target in [&dir, &file] {
+        let permissions = if target == &dir {
+            "everyone allow add_file,delete_child"
+        } else {
+            "everyone allow write"
+        };
+        assert!(Process::new("/bin/chmod")
+            .args(["+a", permissions])
+            .arg(target)
+            .status()
+            .unwrap()
+            .success());
+        let result = protected_path(&file, 0);
+        assert!(Process::new("/bin/chmod")
+            .arg("-N")
+            .arg(target)
+            .status()
+            .unwrap()
+            .success());
+        assert!(result.unwrap_err().to_string().contains("extended ACL"));
+        protected_path(&file, 0).unwrap();
+    }
+}
