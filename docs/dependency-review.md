@@ -53,6 +53,10 @@ These checks use the legacy initialize handshake. The SDK also supports newer
 discovery-based negotiation; that route and live desktop-client compatibility
 remain unverified. No installed plugin was refreshed by this dependency change.
 
+Full cross-platform CI run 42949014786 passed for commit `74f2b16`, including
+Linux/macOS checks, disposable root fixtures and the approval-host job. This
+does not replace the outstanding live desktop compatibility check.
+
 ## npm advisory check
 
 `npm audit --json` returned zero vulnerabilities for both lockfiles on
