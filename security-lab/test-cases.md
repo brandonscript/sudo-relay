@@ -553,3 +553,6 @@ connection routing, not broker authorization or protected target display. Real
 chat-client naming/resource isolation, four remote machines and native handoff
 remain unverified. The prior socket-loss/native-message increment passed full
 CI run 42947279181.
+
+Four-instance routing passed both Linux and macOS jobs in full CI run
+42947886035. This does not establish real chat-client or remote-host routing.

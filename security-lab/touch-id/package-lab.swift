@@ -1,4 +1,5 @@
 // Packages an already-built receipt lab in a temporary directory; never installs or launches it.
+// Icon source is under review: do not distribute this SF Symbol export (docs/icon-source-review.md).
 import AppKit
 import Foundation
 

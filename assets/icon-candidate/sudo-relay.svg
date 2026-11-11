@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="512" height="512" role="img" aria-label="sudo-relay icon candidate: a shield with two linked points">
+  <rect x="8" y="8" width="112" height="112" rx="24" fill="#292929"/>
+  <path d="M64 28 92 41V65C92 81 79 93 64 101 49 93 36 81 36 65V41Z" fill="none" stroke="#fafafa" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M53 62H75" fill="none" stroke="#fafafa" stroke-width="4"/>
+  <circle cx="53" cy="62" r="5" fill="#fafafa"/>
+  <circle cx="75" cy="62" r="5" fill="#fafafa"/>
+</svg>
