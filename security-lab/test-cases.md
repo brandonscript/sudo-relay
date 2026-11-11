@@ -357,3 +357,25 @@ All four cases pass locally. The pause controls compile only under `cfg(test)`;
 normal broker and receipt-verifier artifacts were checked for their absence.
 These are real process deaths and SQLite recovery checks, not power cuts, storage
 faults, snapshot rollback or protected native-key enrollment tests.
+
+### Protected receipt socket and separate client identities
+
+With `native-receipt-lab` enabled, the protected P-256 root test also starts a
+receipt-only socket worker on the disposable CI machine. It uses the normal
+framing, peer-UID checks, protected root store and ledger. The receipt dispatch
+path drops every approved job; it never calls the executor. No new production CLI
+mode or service installation is added.
+
+The agent UID submits a canary request but cannot approve or read the approving
+UID's private fixture file. The approving UID receives only a request ID, retrieves
+the frozen envelope directly from the root socket, checks its machine UUID and
+signs with the paired P-256 fixture key. One consumption succeeds; replay fails;
+status remains consumed with no execution outcome and the canary absent. Foreign
+UID and root-as-client requests reject. Test keys are deliberately known software
+fixtures, not evidence of hardware protection or cryptographic secrecy.
+
+`call_protected` checks root-controlled parents, a root-owned socket and the peer's
+root UID before sending request bytes. Its local negative test rejects a user-owned
+socket before connecting. Compilation and lint pass with and without the lab
+feature; the new protected roundtrip awaits disposable Linux/macOS CI. Actual
+Swift/native UI integration with this root socket remains open.

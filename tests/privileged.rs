@@ -182,6 +182,14 @@ fn unprivileged_peer_probe() {
     } else {
         assert!(fs::read(signing_key).is_err());
     }
+    #[cfg(feature = "native-receipt-lab")]
+    if std::env::var("PE_OPERATION")
+        .unwrap()
+        .starts_with("native_")
+    {
+        native_receipt_peer(&config);
+        return;
+    }
     let spec = Spec {
         command: Command::Argv {
             argv: vec!["/usr/bin/printf".into(), "root integration".into()],
@@ -517,4 +525,157 @@ fn protected_p256_enrollment_and_revocation_without_execution() {
         .unwrap();
     assert!(job.is_some());
     drop(job); // Receipt-only: never call the executor.
+    drop(broker);
+    #[cfg(feature = "native-receipt-lab")]
+    protected_receipt_socket_roundtrip(&config);
+}
+
+#[cfg(feature = "native-receipt-lab")]
+#[test]
+#[ignore = "receipt-only server subprocess for disposable root CI"]
+fn protected_receipt_server() {
+    let Ok(raw) = std::env::var("PE_RECEIPT_CONFIG") else {
+        return;
+    };
+    assert_eq!(unsafe { libc::geteuid() }, 0);
+    let config: Config = serde_json::from_str(&raw).unwrap();
+    std::thread::spawn(|| {
+        std::thread::sleep(Duration::from_secs(30));
+        std::process::exit(2);
+    });
+    transport::serve_receipts(config, false).unwrap();
+}
+
+#[cfg(feature = "native-receipt-lab")]
+fn protected_receipt_socket_roundtrip(config: &Config) {
+    let run = config.socket.parent().unwrap();
+    let peer = run.join("peer-probe");
+    fs::copy(std::env::current_exe().unwrap(), &peer).unwrap();
+    fs::set_permissions(&peer, fs::Permissions::from_mode(0o755)).unwrap();
+    let host = run.join("host");
+    fs::create_dir(&host).unwrap();
+    fs::set_permissions(&host, fs::Permissions::from_mode(0o700)).unwrap();
+    let private = host.join("host.key");
+    fs::write(&private, [27; 32]).unwrap();
+    fs::set_permissions(&private, fs::Permissions::from_mode(0o600)).unwrap();
+    for path in [&host, &private] {
+        let path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(
+            unsafe { libc::chown(path.as_ptr(), config.approver_uid, config.socket_gid) },
+            0
+        );
+    }
+    let mut server = Cleanup {
+        dir: run.to_path_buf(),
+        child: Some(
+            Process::new(&peer)
+                .args(["--exact", "protected_receipt_server", "--ignored"])
+                .env("PE_RECEIPT_CONFIG", serde_json::to_string(config).unwrap())
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .spawn()
+                .unwrap(),
+        ),
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !config.socket.exists() {
+        assert!(server.child.as_mut().unwrap().try_wait().unwrap().is_none());
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let pending = run.join("pending.json");
+    fs::write(&pending, b"").unwrap();
+    fs::set_permissions(&pending, fs::Permissions::from_mode(0o666)).unwrap();
+    probe(
+        config,
+        config.agent_uid,
+        "native_request",
+        Some(pending.to_str().unwrap()),
+    );
+    let id: String = serde_json::from_slice(&fs::read(&pending).unwrap()).unwrap();
+    probe(config, config.agent_uid, "native_agent_approve", Some(&id));
+    probe(config, config.approver_uid, "native_receipt", Some(&id));
+    probe(config, 10003, "foreign", None);
+    assert!(transport::call_protected(&config.socket, &Request::ExecutionStatus { id }).is_err());
+    assert!(!run.join("must-not-exist").exists());
+    server.child.as_mut().unwrap().kill().unwrap();
+    server.child.as_mut().unwrap().wait().unwrap();
+}
+
+#[cfg(feature = "native-receipt-lab")]
+fn native_receipt_peer(config: &Config) {
+    use p256::ecdsa::{signature::Signer as _, Signature, SigningKey as P256Key};
+    let run = config.socket.parent().unwrap();
+    let operation = std::env::var("PE_OPERATION").unwrap();
+    let argument = std::env::var("PE_APPROVAL").unwrap();
+    assert!(fs::read(config.state_dir.join("keys/native.pub")).is_err());
+    if operation == "native_request" {
+        let value = transport::call_protected(
+            &config.socket,
+            &Request::RequestExecution {
+                spec: Spec {
+                    command: Command::Argv {
+                        argv: vec![
+                            "/usr/bin/touch".into(),
+                            run.join("must-not-exist").to_str().unwrap().into(),
+                        ],
+                    },
+                    reason: "Protected receipt fixture; never execute".into(),
+                    timeout_secs: 30,
+                    env: BTreeMap::new(),
+                    output_needed: false,
+                },
+            },
+        )
+        .unwrap();
+        fs::write(
+            argument,
+            serde_json::to_vec(&value["envelope"]["id"]).unwrap(),
+        )
+        .unwrap();
+        return;
+    }
+    // Retrieve the frozen request directly from the root peer, never from agent-supplied display data.
+    let value =
+        transport::call_protected(&config.socket, &Request::ExecutionStatus { id: argument })
+            .unwrap();
+    let pending: PendingView = serde_json::from_value(value["pending"].clone()).unwrap();
+    assert_eq!(pending.envelope.machine_id, config.machine_id);
+    if operation == "native_agent_approve" {
+        assert!(transport::call_protected(
+            &config.socket,
+            &Request::Approve {
+                id: pending.envelope.id,
+                key_id: "native".into(),
+                number: pending.envelope.number,
+                share_output: false,
+                signature: String::new()
+            }
+        )
+        .is_err());
+        return;
+    }
+    assert_eq!(operation, "native_receipt");
+    let key = P256Key::from_slice(&fs::read(run.join("host/host.key")).unwrap()).unwrap();
+    let proof: Signature = key.sign(&pending.envelope.approval_payload(false).unwrap());
+    let approval = Request::Approve {
+        id: pending.envelope.id.clone(),
+        key_id: "native".into(),
+        number: pending.envelope.number,
+        share_output: false,
+        signature: hex::encode(proof.to_der()),
+    };
+    let value = transport::call_protected(&config.socket, &approval).unwrap();
+    assert_eq!(value["state"], "consumed");
+    assert!(transport::call_protected(&config.socket, &approval).is_err());
+    let status = transport::call_protected(
+        &config.socket,
+        &Request::ExecutionStatus {
+            id: pending.envelope.id,
+        },
+    )
+    .unwrap();
+    assert_eq!(status["state"], "consumed");
+    assert!(status["outcome"].is_null());
+    assert!(!run.join("must-not-exist").exists());
 }

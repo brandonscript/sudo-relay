@@ -19,7 +19,25 @@ use std::{
 };
 
 pub fn call(socket: &Path, request: &Request) -> Result<serde_json::Value> {
-    let mut stream = UnixStream::connect(socket).context("broker unavailable")?;
+    exchange(
+        UnixStream::connect(socket).context("broker unavailable")?,
+        request,
+    )
+}
+/// Authenticate the root-owned socket before sending a review reference or proof.
+pub fn call_protected(socket: &Path, request: &Request) -> Result<serde_json::Value> {
+    use std::os::unix::fs::FileTypeExt;
+    crate::broker::protected_path(socket.parent().context("socket has no parent")?, 0)?;
+    let metadata = fs::symlink_metadata(socket)?;
+    ensure!(
+        metadata.file_type().is_socket() && metadata.uid() == 0,
+        "expected a root-owned socket"
+    );
+    let stream = UnixStream::connect(socket).context("broker unavailable")?;
+    ensure!(peer_uid(&stream)? == 0, "broker peer must be root");
+    exchange(stream, request)
+}
+fn exchange(mut stream: UnixStream, request: &Request) -> Result<serde_json::Value> {
     stream.set_read_timeout(Some(Duration::from_secs(10)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     serde_json::to_writer(&mut stream, request)?;
@@ -93,6 +111,18 @@ fn peer_uid(stream: &UnixStream) -> Result<u32> {
     Ok(uid)
 }
 pub fn serve(config: Config, development: bool) -> Result<()> {
+    serve_mode(config, development, Dispatch::Execute)
+}
+#[cfg(feature = "native-receipt-lab")]
+pub fn serve_receipts(config: Config, development: bool) -> Result<()> {
+    serve_mode(config, development, Dispatch::ReceiptOnly)
+}
+enum Dispatch {
+    Execute,
+    #[cfg(feature = "native-receipt-lab")]
+    ReceiptOnly,
+}
+fn serve_mode(config: Config, development: bool, dispatch: Dispatch) -> Result<()> {
     let broker = Broker::open(config.clone(), development)?;
     let parent = config.socket.parent().context("socket has no parent")?;
     if !development {
@@ -149,6 +179,14 @@ pub fn serve(config: Config, development: bool) -> Result<()> {
             Ok(v) => v,
             Err(e) => (Reply::error(format!("{e:#}")), None),
         };
+        let job = match &dispatch {
+            Dispatch::Execute => job,
+            #[cfg(feature = "native-receipt-lab")]
+            Dispatch::ReceiptOnly => {
+                drop(job);
+                None
+            }
+        };
         if let Some(job) = job {
             let state = Arc::clone(&shared);
             thread::spawn(move || {
@@ -184,6 +222,25 @@ pub fn serve(config: Config, development: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn protected_call_rejects_user_socket_before_connecting() {
+        assert_ne!(unsafe { libc::geteuid() }, 0);
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("untrusted.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        assert!(call_protected(
+            &socket,
+            &Request::ExecutionStatus {
+                id: "test-reference".into()
+            }
+        )
+        .is_err());
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
     #[test]
     fn buffered_reply_survives_peer_disconnect() {
         let (mut read, mut write) = UnixStream::pair().unwrap();

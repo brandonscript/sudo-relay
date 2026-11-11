@@ -236,3 +236,18 @@ The revised protected P-256 root case passed Linux and macOS jobs in run
 stages and explicit recovery without executing a command. This narrows the
 interrupted-enrollment uncertainty; it does not establish protected native key
 persistence, sponsor identity, power-loss durability or anti-rollback protection.
+
+### Root-store socket fixture
+
+The disposable protected P-256 fixture now includes a separate receipt-only socket
+worker using the real broker store and UID boundary. A protected client verifies
+the root peer before sending data and retrieves the frozen request through the
+existing status endpoint; no new review protocol is needed. The approver signs
+only after that retrieval. The server's receipt mode discards approved jobs and
+is feature-gated; it is not exposed by the production CLI.
+
+Local untrusted-socket rejection and compilation/lint pass. The new protected
+roundtrip requires disposable CI verification. It is the protected-store transport
+prerequisite, not finished native enrollment, UI integration, sponsor binding or
+Touch ID evidence. Process-crash cases from the preceding increment passed the
+full Linux/macOS CI run 42941491819.

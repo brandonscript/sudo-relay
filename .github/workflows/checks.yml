@@ -73,7 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --locked --test privileged --no-run --message-format=json > /tmp/privileged-test-build.json
+      - run: cargo test --locked --features native-receipt-lab --test privileged --no-run --message-format=json > /tmp/privileged-test-build.json
       - name: Run only the built root test executable
         run: |
           python3 - <<'PYTEST'
