@@ -1,12 +1,19 @@
 import Foundation
+import CryptoKit
 
 @main
 struct Client {
     static func main() throws {
         guard getuid() != 0 else { exit(2) }
         let arguments = Array(CommandLine.arguments.dropFirst())
-        guard arguments.isEmpty || arguments == ["--characterize-without-handshake"] else { exit(2) }
         let root = Bundle.main.bundleURL.deletingLastPathComponent()
+        if arguments == ["--fixture-key"] {
+            let key = P256.Signing.PrivateKey()
+            try key.rawRepresentation.write(to: root.appendingPathComponent("fixture-private.key"))
+            try key.publicKey.rawRepresentation.write(to: root.appendingPathComponent("fixture-public.key"))
+            return
+        }
+        guard arguments.isEmpty || arguments == ["--characterize-without-handshake"] || arguments == ["--signed-review"] else { exit(2) }
         let policy = try PeerPolicy.load(from: root)
         let connection = NSXPCConnection(serviceName: "local.sudo-relay.peer-service")
         connection.remoteObjectInterface = NSXPCInterface(with: PeerReceiptProtocol.self)
@@ -23,12 +30,13 @@ struct Client {
                 exit(0)
             }
         }
-        if arguments.isEmpty {
+        if arguments != ["--characterize-without-handshake"] {
             // Peer checks on replies do not prevent an initial call's remote side effects.
             proxy.hello { response in
                 guard response == "peer-check-hello" else { report("invalid-hello"); exit(2) }
                 report("peer-verified")
-                sendReceipt()
+                if arguments == ["--signed-review"] { checkSignedReview(proxy, root: root) }
+                else { sendReceipt() }
             }
         } else {
             // Explicit negative control in this disposable lab only; never a production option.
@@ -38,5 +46,31 @@ struct Client {
             report("timeout-not-a-security-pass"); exit(2)
         }
         withExtendedLifetime(connection) { dispatchMain() }
+    }
+}
+
+func checkSignedReview(_ proxy: any PeerReceiptProtocol, root: URL) {
+    proxy.review { bytes, signature, authority in
+        do {
+            guard let bytes, let signature, let authority else { report("missing-review"); exit(2) }
+            // Trust derives from the authenticated XPC service, not from a key in an arbitrary packet.
+            let review = try AuthenticatedReview(bytes: bytes, signature: signature,
+                authority: Curve25519.Signing.PublicKey(rawRepresentation: authority), now: Int64(Date().timeIntervalSince1970))
+            // shortcut: software proof exercises transport only; hardware signer integration remains separate.
+            let key = try P256.Signing.PrivateKey(rawRepresentation: Data(contentsOf: root.appendingPathComponent("fixture-private.key")))
+            let decision = try review.decision(shareOutput: false, now: Int64(Date().timeIntervalSince1970))
+            let proof = try key.signature(for: decision).derRepresentation
+            let altered = try review.decision(shareOutput: true, now: Int64(Date().timeIntervalSince1970))
+            proxy.submit(altered, signature: proof) { accepted in
+                guard !accepted else { report("altered-decision-accepted"); exit(2) }
+                proxy.submit(decision, signature: proof) { accepted in
+                    guard accepted else { report("valid-decision-rejected"); exit(2) }
+                    proxy.submit(decision, signature: proof) { replay in
+                        guard !replay else { report("replay-accepted"); exit(2) }
+                        report("signed-review-one-receipt-alteration-and-replay-rejected"); exit(0)
+                    }
+                }
+            }
+        } catch { report("review-failed", error: error); exit(2) }
     }
 }

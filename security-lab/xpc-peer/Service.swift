@@ -1,12 +1,34 @@
 import Foundation
+import CryptoKit
 
 final class ReceiptService: NSObject, NSXPCListenerDelegate, PeerReceiptProtocol, @unchecked Sendable {
     private let policy: PeerPolicy
     private let root: URL
+    private let verifier: ReviewReceiptVerifier?
     // XPC may deliver different clients concurrently; serialize the test receipt file.
     private let lock = NSLock()
 
-    init(policy: PeerPolicy, root: URL) { self.policy = policy; self.root = root }
+    init(policy: PeerPolicy, root: URL) throws {
+        self.policy = policy; self.root = root
+        let keyFile = root.appendingPathComponent("fixture-public.key")
+        if FileManager.default.fileExists(atPath: keyFile.path) {
+            let key = try P256.Signing.PublicKey(rawRepresentation: Data(contentsOf: keyFile))
+            verifier = ReviewReceiptVerifier(signer: key, now: Int64(Date().timeIntervalSince1970))
+        } else { verifier = nil }
+    }
+
+    func review(reply: @escaping @Sendable (Data?, Data?, Data?) -> Void) {
+        guard let packet = try? verifier?.issue() else { reply(nil, nil, nil); return }
+        reply(packet.bytes, packet.signature, packet.authority.rawRepresentation)
+    }
+
+    func submit(_ decision: Data, signature: Data, reply: @escaping @Sendable (Bool) -> Void) {
+        guard decision.count <= 16384, signature.count <= 80, let verifier else { reply(false); return }
+        do {
+            _ = try verifier.consume(decision: decision, signature: signature, now: Int64(Date().timeIntervalSince1970))
+            reply(true)
+        } catch { reply(false) }
+    }
 
     func listener(_ listener: NSXPCListener, shouldAcceptNewConnection connection: NSXPCConnection) -> Bool {
         connection.setCodeSigningRequirement(policy.client)

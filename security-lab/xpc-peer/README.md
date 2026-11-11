@@ -12,8 +12,9 @@ python3 security-lab/xpc-peer/check.py
 
 The harness builds two small processes into temporary app/XPC bundles, signs
 them ad hoc with the hardened-runtime option, pins their exact code-directory
-hashes, and runs six cases. It uses no signing certificate, password, persistent
-key, biometric prompt, network listener, sudo/PAM change or installed service.
+hashes, and runs seven cases. The signed-review case creates disposable software keys
+in the temporary fixture directory. It uses no signing certificate, password,
+biometric prompt, network listener, sudo/PAM change or installed service.
 macOS launches the bundled helper on demand. Helpers exit on disconnection or
 after 15 seconds; each client has a ten-second deadline and the harness has
 bounded subprocess timeouts. Temporary bundles and receipts are removed at exit.
@@ -25,7 +26,8 @@ crash or failed positive control is an error, never a security pass.
 ## Cases and observed results
 
 November 10, 2026, local macOS 27.2, Swift 6.4.2: all six expected outcomes were
-observed. The last is an intentionally unsafe pattern, not a protective pass.
+observed. The direct-call case is an intentionally unsafe pattern, not a protective pass.
+The seventh, signed-review case also passed locally; its hosted CI result is not yet recorded.
 
 The six-case XPC step also passed on the GitHub macOS runner for `ec459d5`;
 the complete [CI run](https://github.com/brandonscript/sudo-relay/actions/runs/42927110278)
@@ -39,6 +41,7 @@ succeeded. Hosted-runner results are separate from local hardware/UI checks.
 | Different service bundle, its new identity explicitly pinned | One receipt, showing the changed service can run. |
 | Same changed service, original identity still pinned | Reply rejected during handshake; zero receipts (`NSCocoaErrorDomain 4102`). |
 | Changed service, original pin, consequential call sent before handshake | Client rejects the reply **after one remote receipt was created** (`4102`). Known unsafe sequence. |
+| Signed review after authenticated handshake | Altered output choice rejected, valid proof accepted once, replay rejected. |
 
 Variants retain the same account and bundle identifier; a changed sealed resource
 and fresh ad-hoc signature produce a different code identity. Bundle signatures
@@ -71,6 +74,23 @@ The local SDK recommends setting the requirement before resuming a connection.
 This bundled XPC service sets it on each accepted connection; the listener-wide
 API is not supported for `serviceListener` instances.
 
+## Signed review across processes
+
+The seventh case compiles the existing `AuthenticatedReview` and
+`ReviewReceiptVerifier` implementation into the two processes. The service owns
+its frozen request and consumption state. The client authenticates the service
+before retrieving its signed request, signs the complete decision with a disposable
+P-256 software key, and submits it over that same connection. The service has only
+the fixture's approving public key. Changing output sharing while retaining the
+original proof fails; the valid decision succeeds once and replay fails.
+
+The returned authority key is trusted through the pinned XPC service. It is not
+trusted merely because it accompanies a signature. This fixture deliberately
+uses software signing for automation, even though the reused request schema says
+`touch-id`: **it provides no biometric evidence** and must not be wired into the
+production approval path. Receipt counts for this case reflect the verified
+submission responses, not a durable audit file. Service exit discards state.
+
 ## What this does not establish
 
 The pins live in a fixture-owned, same-user JSON file outside the signed bundles
@@ -79,10 +99,11 @@ the trusted peer.** The harness also creates the keys/pins and trusts its own
 setup; it is not protected enrollment. An exact hash is convenient for this
 single-build experiment, not a settled update/rollback policy.
 
-There is no request review, Touch ID/passkey proof, durable approval ledger,
+There is no human request review, Touch ID/passkey proof, durable approval ledger,
 cross-user isolation, trusted installation or broker integration here. Calling an
 allowed executable is not proof that a human approved anything. The existing
-native review lab remains a separate same-process experiment.
+native UI/Touch ID lab remains a separate same-process experiment. The software-key
+case reuses its verifier but does not connect its UI or hardware signer.
 
 Next: define protected enrollment and update policy, then connect the existing
 authenticated review and biometric signing flow to a separate receipt verifier.

@@ -1,11 +1,13 @@
 import Foundation
 import Security
 
-// Transport receipt only: no command, human approval, private key or signing endpoint.
+// Receipt-only transport and proof verification; no command runner or human approval.
 @objc(SudoRelayPeerReceiptProtocol)
 protocol PeerReceiptProtocol: Sendable {
     func hello(reply: @escaping @Sendable (String) -> Void)
     func receipt(reply: @escaping @Sendable (String) -> Void)
+    func review(reply: @escaping @Sendable (Data?, Data?, Data?) -> Void)
+    func submit(_ decision: Data, signature: Data, reply: @escaping @Sendable (Bool) -> Void)
 }
 
 struct PeerPolicy: Decodable {
