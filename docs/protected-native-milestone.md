@@ -69,3 +69,26 @@ CI results must be recorded before these additions are counted as passing.
 Apple describes storing Secure Enclave encrypted key representations as Keychain
 generic-password items in [Storing CryptoKit keys](https://developer.apple.com/documentation/cryptokit/storing-cryptokit-keys-in-the-keychain).
 This is storage guidance, not evidence that our app's enrollment/access policy works.
+
+## Final test prerequisites
+
+Before hardware testing, record the chosen Mac, OS, reviewer build/signing identity,
+Keychain access group, protected installation/enrollment paths, approver UID and
+verifier launch/teardown commands. Verify that a different ordinary process cannot
+retrieve the signer item and cannot replace the installed code or enrollment.
+Do not infer this from a successful legitimate-key lookup.
+
+Enrollment must explicitly create a biometric-current-set Secure Enclave key in
+the authorized reviewer and publish only its public key for administrator pairing.
+This app currently has no enrollment action; provisioning is unfinished. An
+existing test wrapped-key file must not be imported as a shortcut around those
+checks. The final environment choice is pending; nothing has been installed or
+written to the personal Keychain by this milestone.
+
+Local results for the first integration: Swift 6 warnings-as-errors builds pass
+for the interactive app and headless helper; Rust lint and nine bridge tests pass;
+existing native protocol checks pass. First disposable CI exposed a fixture-order
+error (new request after a consumed receipt); commit `5ca3e37` moves cancellation
+before consumption and adds cancelled-signing/no-retry checks. Full replacement CI 42950490558 passed for `5ca3e37`: all six jobs, including
+both protected-account fixtures and the interactive-app build. These are software
+and build results; no hardware prompt or protected Keychain setup was exercised.
