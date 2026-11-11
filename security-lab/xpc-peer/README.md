@@ -27,7 +27,7 @@ crash or failed positive control is an error, never a security pass.
 
 November 10, 2026, local macOS 27.2, Swift 6.4.2: all six expected outcomes were
 observed. The direct-call case is an intentionally unsafe pattern, not a protective pass.
-The seventh, signed-review case passed locally and in the complete [CI run for `87dfece`](https://github.com/brandonscript/sudo-relay/actions/runs/42928675258). The eighth, cancellation case passed locally; its hosted result is not yet recorded.
+The seventh, signed-review case passed locally and in the complete [CI run for `87dfece`](https://github.com/brandonscript/sudo-relay/actions/runs/42928675258). The eighth, cancellation case and native client build also passed in the complete [CI run for `beb1c37`](https://github.com/brandonscript/sudo-relay/actions/runs/42929213733).
 
 The six-case XPC step also passed on the GitHub macOS runner for `ec459d5`;
 the complete [CI run](https://github.com/brandonscript/sudo-relay/actions/runs/42927110278)

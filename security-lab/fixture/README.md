@@ -78,7 +78,7 @@ configuration/parent paths and agent-owned trust directories are rejected, and
 pairing cannot overwrite a file through a pre-existing key symlink. Positive
 controls check the installed public key's owner/mode and contents. A public test
 vector replaces credentials. All five passed locally on Linux arm64 on November
-10, 2026; hosted CI is pending.
+10, 2026. The dedicated enrollment job also passed in [CI for `f1eb714`](https://github.com/brandonscript/sudo-relay/actions/runs/42929599816); this records that job, not completion of the whole run.
 
 These establish specific CLI and filesystem checks, not protected human pairing,
 sponsor provenance, live revocation enforcement, ACL handling, replacement races,

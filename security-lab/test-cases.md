@@ -169,3 +169,21 @@ Positive controls check exact public-key contents and root-only permissions.
 Only a public test vector is used. No request, signer, listener or command runner
 starts. Five local cases passed November 10, 2026. This does not establish sponsor
 provenance, ACL safety, races, live revocation or protected native enrollment.
+
+## Cross-host authorization isolation (implemented; no execution)
+
+`four_hosts_isolate_colliding_requests_and_key_revocation` in `tests/security.rs`
+opens four independent development-mode brokers and trust stores, all using the
+same disposable test key. The test controller inserts deliberately colliding
+pending envelopes: identical request ID, nonce, number, timestamps and command;
+only the machine UUID differs. Each of the twelve cross-host deliveries must
+fail signature verification, leaving its target pending. Revoking the first
+host's key blocks its own valid approval while the other three still accept
+their own approvals once and reject replay.
+
+The test inspects returned authorization jobs and never invokes execution or a
+socket listener. It passed locally on November 10, 2026. This isolates signed
+machine identity and independent key/consumption state; it does not establish
+MCP multi-target routing, authenticated display labels, sponsor isolation,
+network transport, machine replacement or safe enrollment recovery. Collisions
+are controller-created fixtures, not an exposed request-editing endpoint.

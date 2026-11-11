@@ -172,6 +172,76 @@ fn expiry_cancellation_and_revocation_deny_execution() {
     }
 }
 #[test]
+fn four_hosts_isolate_colliding_requests_and_key_revocation() {
+    let setups: Vec<_> = (0..4).map(|_| Setup::new()).collect();
+    let mut brokers: Vec<_> = setups.iter().map(Setup::broker).collect();
+    let common = Envelope::new(&setups[0].config.machine_id, spec(), 100, 300).unwrap();
+    let envelopes: Vec<_> = setups
+        .iter()
+        .map(|setup| {
+            let mut envelope = common.clone();
+            envelope.machine_id = setup.config.machine_id.clone();
+            // Controller-created collision: only machine identity differs, not ID, nonce or command.
+            let db = rusqlite::Connection::open(setup.dir.path().join("state.sqlite3")).unwrap();
+            db.execute(
+                "INSERT INTO requests(id,envelope,state) VALUES(?1,?2,'pending')",
+                rusqlite::params![envelope.id, serde_json::to_string(&envelope).unwrap()],
+            )
+            .unwrap();
+            envelope
+        })
+        .collect();
+    for (source, setup) in setups.iter().enumerate() {
+        for (target, broker) in brokers.iter_mut().enumerate() {
+            if source == target {
+                continue;
+            }
+            let error = broker
+                .handle(
+                    setup.approval(&envelopes[source]),
+                    setup.config.approver_uid,
+                    101,
+                )
+                .err()
+                .expect("another host's signature must be rejected");
+            assert!(error.to_string().contains("invalid approval signature"));
+            assert_eq!(
+                state(broker, &common.id, setup.config.agent_uid, 101),
+                "pending"
+            );
+        }
+    }
+    fs::remove_file(setups[0].dir.path().join("keys/test.pub")).unwrap();
+    assert!(brokers[0]
+        .handle(
+            setups[0].approval(&envelopes[0]),
+            setups[0].config.approver_uid,
+            102
+        )
+        .is_err());
+    for index in 1..4 {
+        let setup = &setups[index];
+        let envelope = &envelopes[index];
+        let broker = &mut brokers[index];
+        let (_, job) = broker
+            .handle(setup.approval(envelope), setup.config.approver_uid, 102)
+            .unwrap();
+        // Inspect authorization only; never call the executor or start a transport listener.
+        assert_eq!(job.unwrap().envelope.machine_id, setup.config.machine_id);
+        assert_eq!(
+            state(broker, &common.id, setup.config.agent_uid, 102),
+            "consumed"
+        );
+        assert!(broker
+            .handle(setup.approval(envelope), setup.config.approver_uid, 103)
+            .is_err());
+    }
+    assert_eq!(
+        state(&mut brokers[0], &common.id, setups[0].config.agent_uid, 103),
+        "pending"
+    );
+}
+#[test]
 fn three_signed_wrong_number_attempts_cancel() {
     let s = Setup::new();
     let mut b = s.broker();
