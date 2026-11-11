@@ -11,6 +11,9 @@ swiftc -swift-version 6 -warnings-as-errors -module-cache-path "$check_dir/modul
   security-lab/native-protocol/ReceiptPipe.swift \
   security-lab/touch-id/Sources/ApprovalProbe/ReviewBoundary.swift \
   security-lab/touch-id/Sources/ApprovalProbe/NativeReviewForm.swift \
+  security-lab/touch-id/Sources/ApprovalProbe/BiometricSigning.swift \
+  security-lab/touch-id/Sources/ApprovalProbe/Challenge.swift \
+  security-lab/xpc-peer/Shared.swift security-lab/xpc-peer/NativeDurableFlow.swift \
   -L target/debug -lsudo_relay -framework Security \
   -framework SystemConfiguration -liconv -o "$check_dir/check"
 "$check_dir/check" "$PWD"

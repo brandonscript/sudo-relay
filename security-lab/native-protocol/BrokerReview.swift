@@ -46,6 +46,8 @@ struct BrokerReview: NativeReviewContent {
     let subtitle: String
     var createdAt: Int64 { prepared.envelope.created_at }
     var expiresAt: Int64 { prepared.envelope.expires_at }
+    var requestID: String { prepared.envelope.id }
+    var confirmationNumber: String { prepared.envelope.number }
     var commandLabel: String {
         switch prepared.envelope.spec.command {
         case .argv: return "Example command · Not executed"

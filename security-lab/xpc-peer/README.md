@@ -215,3 +215,32 @@ is unsafe if another process can concurrently replace the file. Dynamic checks
 before sending a request cannot undo effects of malicious code that already ran
 at launch. Protected executable/ancestor ownership, enrollment and update policy
 remain required; current same-user fixtures deliberately do not provide them.
+
+## Touch ID with the durable verifier
+
+`python3 security-lab/xpc-peer/check.py --prepare-native-durable` prepares, but
+does not open, a fresh app with the existing shield/layout. Its signed bundle
+explicitly selects the CBOR broker protocol. It never falls back to the original
+JSON lab after an error. The original `--prepare-native` option remains a separate
+experiment; the lack of durable state described above applies to that older path.
+
+The new app creates an ephemeral biometric key, writes only the public key to
+fresh fixture enrollment without overwriting, performs the XPC handshake, and
+retrieves a broker-generated request. It displays the validated model, freezes
+output sharing, asks for Touch ID, checks expiry again, and submits the exact
+proof. Success requires a consumed acknowledgement for the same request ID and
+an absent canary file. There is no extra success dialog. Denial, fingerprint
+cancellation and expiry should close quietly. A submitted-but-unconfirmed proof
+is never automatically retried or cancelled as though it were still pending.
+
+Build and software regression checks pass; hardware behavior on this new path
+is unverified. Coordinate with the participant before opening the app, then test
+approval, denial, fingerprint cancellation and expiry during authentication on
+separate fresh bundles. Inspect logs and the temporary ledger afterward without
+launching an executor. The child deadline is six minutes to allow the five-minute
+review. A reopened bundle refuses to overwrite its enrolled public key; prepare
+a fresh fixture rather than replacing it or keeping a private signing key.
+
+This remains self-enrollment in an agent-writable fixture. It is not production
+pairing, a protected installation, or proof that the reviewing app cannot be
+compromised. No actual sudo command or personal authentication policy is changed.

@@ -159,6 +159,12 @@ path in the fixture, not the protected-installation requirement: static-check to
 launch replacement races and injection remain unevaluated. No code-identity check
 proves that a human approved, and no protected enrollment has been installed.
 
+The explicitly selected durable native app now connects the accepted UI and
+Touch ID signer to that CBOR/XPC/ledger path. The build and acknowledgement checks
+pass; fresh hardware approval/cancellation/expiry evidence is still required.
+Its ephemeral public-key enrollment is non-overwriting but remains self-created
+in writable lab state. Do not call this administrator-protected pairing.
+
 The dependency and its transitive graph are locked. This increment is not a full
 cryptographic dependency audit; upstream advisories and release provenance still
 need the release review already listed in the backlog.

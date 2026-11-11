@@ -13,7 +13,7 @@ import tempfile
 import uuid
 
 SOURCE = Path(__file__).resolve().parent
-assert sys.argv[1:] in ([], ["--prepare-native"]), "Use --prepare-native to retain a manual-test app"
+assert sys.argv[1:] in ([], ["--prepare-native"], ["--prepare-native-durable"]), "Use --prepare-native to retain a manual-test app"
 assert sys.platform == "darwin" and os.getuid() != 0, "Run as an ordinary macOS user"
 
 
@@ -85,7 +85,10 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
     approval_sources = sorted((SOURCE.parent / "touch-id/Sources/ApprovalProbe").glob("*.swift"))
     run("/usr/bin/xcrun", "swiftc", "-swift-version", "6", "-parse-as-library", "-warnings-as-errors",
         "-module-cache-path", str(root / "modules"), str(SOURCE / "Shared.swift"),
-        *(str(path) for path in approval_sources), str(SOURCE / "NativeClient.swift"), "-o", str(native_binary))
+        *(str(path) for path in approval_sources), str(SOURCE / "NativeClient.swift"),
+        str(SOURCE / "NativeDurableFlow.swift"), str(SOURCE.parent / "native-protocol/BrokerReview.swift"),
+        "-I", str(SOURCE.parent / "native-protocol"), "-L", str(repo / "target/debug"), "-lsudo_relay",
+        "-framework", "Security", "-framework", "SystemConfiguration", "-liconv", "-o", str(native_binary))
     original_client = cdhash(original)
     original_service = cdhash(helper)
     original_verifier = cdhash(helper / "Contents/Helpers/receipt-verifier")
@@ -169,17 +172,30 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
         results.append({"case": case, "expectation_met": True, "known_unsafe_pattern": characterization,
                         "receipt_count": 1 if case in ["signed-review", "signed-reconnect", "durable-review", "durable-child-allowed"] else int(receipt.exists()), "events": events})
     native_app: str | None = None
-    if sys.argv[1:] == ["--prepare-native"]:
+    if sys.argv[1:]:
         packaged = run("/usr/bin/xcrun", "swift", "-module-cache-path", str(root / "modules"),
                        str(SOURCE.parent / "touch-id/package-lab.swift"), str(native_binary))
         app = Path(packaged.stdout.strip())
         assert app.is_dir() and app.name == "sudo-relay lab.app"
         shutil.copytree(helper, app / helper_relative)
+        if sys.argv[1:] == ["--prepare-native-durable"]:
+            info_path = app / "Contents/Info.plist"
+            info = plistlib.loads(info_path.read_bytes())
+            info["SudoRelayLabProtocol"] = "broker-cbor-v2"
+            write_plist(info_path, info)
+            state = app.parent / "state"
+            state.mkdir(mode=0o700)
+            (state / "keys").mkdir(mode=0o700)
+            (app.parent / "broker-config.json").write_text(json.dumps({
+                "machine_id": str(uuid.uuid4()), "agent_uid": os.getuid(), "approver_uid": os.getuid(),
+                "socket_gid": os.getgid(), "state_dir": str(state), "socket": str(app.parent / "unused.sock"),
+            }))
         sign(app)
         run("/usr/bin/codesign", "--verify", "--deep", "--strict", str(app))
         (app.parent / "policy.json").write_text(json.dumps({
             "client": f'identifier "local.sudo-relay.receipt-lab" and cdhash H"{cdhash(app)}"',
             "service": f'identifier "local.sudo-relay.peer-service" and cdhash H"{cdhash(app / helper_relative)}"',
+            "verifier": f'cdhash H"{cdhash(app / helper_relative / "Contents/Helpers/receipt-verifier")}"',
         }))
         native_app = str(app)
     print(json.dumps({"cases": results, "prepared_native_app": native_app, "uid": os.getuid(), "commands_executed": 0,

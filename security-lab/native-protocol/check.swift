@@ -93,6 +93,16 @@ struct Check {
             preconditionFailure("wrong machine accepted")
         } catch ReviewError.invalidRequest { }
         try checkDurableReceipt(root: root)
+        let accepted: [String: Any] = ["receipt_only": true, "commands_executed": 0, "approval_consumed": true,
+            "reply": ["ok": true, "value": ["id": "expected", "state": "consumed"]]]
+        precondition(receiptWasConsumed(accepted, requestID: "expected"))
+        precondition(!receiptWasConsumed(accepted, requestID: "different"))
+        for (field, value) in [("receipt_only", false as Any), ("commands_executed", 1 as Any),
+                               ("approval_consumed", false as Any), ("reply", ["ok": false] as Any),
+                               ("receipt_only", 1 as Any), ("commands_executed", false as Any)] {
+            var changed = accepted; changed[field] = value
+            precondition(!receiptWasConsumed(changed, requestID: "expected"))
+        }
         print("Native protocol bridge: exact displayed model, both CBOR proofs, wrong host, expiry and buffer bounds passed. Nothing executed.")
     }
 }

@@ -224,3 +224,13 @@ with its new pin accepts one test receipt; the same child with the old pin and
 a missing-pin case both fail before ledger creation. Valid child processes also
 pass identity checks before each request. Thirteen cases pass locally. Dynamic
 replacement, launch races, injection and protected path ownership remain open.
+
+NP7 (hardware check pending): prepare a fresh app with `--prepare-native-durable`,
+then coordinate with the participant before opening it. Verify the displayed
+request, choose output sharing, approve with Touch ID, and inspect the matching
+consumed ledger entry and absent canary. Repeat denial, fingerprint cancellation
+and expiry in separate fresh fixtures. No extra success/cancellation dialog should
+appear. The app's selected protocol is sealed in its bundle; failures must not
+switch to the old JSON verifier. Build and software acknowledgement checks pass,
+including wrong-request and malformed acknowledgement rejection; this does not
+count as a hardware pass.

@@ -7,6 +7,7 @@ import LocalAuthentication
 struct NativeClient {
     static func main() {
         guard getuid() != 0 else { exit(2) }
+        umask(0o077)
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         Task { @MainActor in
@@ -29,7 +30,10 @@ struct NativeClient {
 
     static func review() async throws {
         let root = Bundle.main.bundleURL.deletingLastPathComponent()
+        let mode = Bundle.main.object(forInfoDictionaryKey: "SudoRelayLabProtocol") as? String ?? "native-json-v1"
+        guard mode == "native-json-v1" || mode == "broker-cbor-v2" else { throw ReviewError.invalidRequest }
         let policy = try PeerPolicy.load(from: root)
+        if mode == "broker-cbor-v2", policy.verifier == nil { throw ReviewError.invalidAuthority }
         let capability = BiometricSigning.context()
         var error: NSError?
         let available = capability.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
@@ -42,7 +46,12 @@ struct NativeClient {
         defer { lookup.invalidate() }
         let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: keyData, authenticationContext: lookup)
         // Disposable fixture enrollment before service launch; not a protected trust store.
-        try key.publicKey.rawRepresentation.write(to: root.appendingPathComponent("fixture-public.key"))
+        if mode == "broker-cbor-v2" {
+            let hex = key.publicKey.x963Representation.map { String(format: "%02x", $0) }.joined()
+            try Data("p256-sha256:\(hex)".utf8).write(to: root.appendingPathComponent("state/keys/native.pub"), options: .withoutOverwriting)
+        } else {
+            try key.publicKey.rawRepresentation.write(to: root.appendingPathComponent("fixture-public.key"))
+        }
         let connection = NSXPCConnection(serviceName: "local.sudo-relay.peer-service")
         connection.remoteObjectInterface = NSXPCInterface(with: PeerReceiptProtocol.self)
         connection.setCodeSigningRequirement(policy.service)
@@ -60,6 +69,10 @@ struct NativeClient {
         }
         guard hello == "peer-check-hello" else { throw ReviewError.invalidAuthority }
         report("peer-verified")
+        if mode == "broker-cbor-v2" {
+            try await reviewDurableNative(proxy, root: root, keyData: keyData)
+            return
+        }
         let packet: (Data?, Data?, Data?) = await withCheckedContinuation { continuation in
             proxy.review { continuation.resume(returning: ($0, $1, $2)) }
         }

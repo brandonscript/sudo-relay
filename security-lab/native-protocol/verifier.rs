@@ -28,7 +28,7 @@ fn main() -> Result<()> {
     );
     let mut broker = Broker::open(config, true)?;
     std::thread::spawn(|| {
-        std::thread::sleep(std::time::Duration::from_secs(60));
+        std::thread::sleep(std::time::Duration::from_secs(360));
         std::process::exit(2);
     });
     let stdin = std::io::stdin();

@@ -8,7 +8,7 @@ state and a disposable software P-256 key. It uses the real broker's signature
 verification and SQLite consumption code, but drops every returned execution job.
 It never starts the broker execution transport. The `receipt-verifier` binary
 requires the explicit `native-receipt-lab` build feature and environment opt-in,
-refuses root, bounds messages and exits after 60 seconds. It is not packaged by
+refuses root, bounds messages and exits after six minutes. It is not packaged by
 the release workflow. These are accident guards, not proof of human approval.
 
 The native reviewer should not grow another implementation of the production
@@ -79,9 +79,10 @@ verifier through its protected enrollment and IPC before accepting the request;
 the paired machine identity must come from that enrollment. Do not expose the
 biometric signer as an arbitrary-payload signing endpoint.
 
-The current native/XPC lab still uses its separate JSON receipt format. Wiring
-the new model into authenticated request retrieval, rechecking
-expiry after authentication, and joining the XPC and durable verifier paths remain
-open. The pipe test is controlled by the fixture process; it is not authenticated
-production IPC. Protected enrollment, a real biometric signature through this
-durable path, crash-before-reply handling and rollback recovery remain unverified.
+The original native/XPC lab uses its separate JSON receipt format. The explicit
+`--prepare-native-durable` variant now wires the new model into authenticated
+retrieval, Touch ID and durable verification, with post-authentication expiry and
+matching-request acknowledgement checks. It compiles but needs a human hardware
+trial. The pipe test itself is controlled by the fixture process; it is not
+authenticated production IPC. Protected enrollment, crash-before-reply handling
+and rollback recovery remain unverified.
