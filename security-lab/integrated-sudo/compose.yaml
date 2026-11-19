@@ -1,0 +1,23 @@
+services:
+  integration:
+    image: sudo-relay-integrated-integration:latest
+    build:
+      context: ../..
+      dockerfile: security-lab/integrated-sudo/Dockerfile
+    network_mode: none
+    hostname: sudo-integration
+    extra_hosts: ["sudo-integration:127.0.0.1"]
+    read_only: true
+    cap_drop: [ALL]
+    # SYS_CHROOT supports the in-container SSH daemon privilege separation.
+    # SYS_PTRACE lets the root installer inspect its nondumpable sudo parent; container PID namespace only.
+    cap_add: [CHOWN, SETUID, SETGID, FOWNER, KILL, AUDIT_WRITE, SYS_PTRACE, SYS_CHROOT]
+    # Real setuid sudo is the subject of this test; no-new-privileges would disable it.
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 1
+    tmpfs:
+      - /lab:rw,nosuid,nodev,noexec,size=16m,mode=0755
+      - /tmp:rw,nosuid,nodev,noexec,size=8m,mode=1777
+      - /etc/sudoers.d:rw,nosuid,nodev,noexec,size=1m,mode=0755
+      - /run:rw,nosuid,nodev,noexec,size=2m,mode=0755

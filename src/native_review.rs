@@ -308,7 +308,7 @@ struct Review {
     approval_withheld: String,
 }
 
-fn prepare(input: &[u8], machine: &str, now: u64) -> Result<Vec<u8>> {
+pub(crate) fn prepare(input: &[u8], machine: &str, now: u64) -> Result<Vec<u8>> {
     ensure!(input.len() <= MAX_REQUEST_BYTES, "review too large");
     ensure!(
         !machine.is_empty() && machine.len() <= 256,

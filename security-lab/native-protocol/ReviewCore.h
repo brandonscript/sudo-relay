@@ -25,3 +25,7 @@ int32_t sudo_relay_submit_receipt(const uint8_t *input, size_t input_len);
 // JSON {enrollment,id}, <=4096 bytes. Cancel a protected pending receipt only.
 // Returns 1 for matching cancellation acknowledgement, -1 otherwise. No retries.
 int32_t sudo_relay_cancel_receipt(const uint8_t *input, size_t input_len);
+
+// Explicit disposable-Linux execution build only. Never accepts receipt enrollment.
+intptr_t sudo_relay_execution_review(const uint8_t *input, size_t input_len,
+    uint8_t *output, size_t capacity);

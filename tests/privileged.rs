@@ -527,27 +527,27 @@ fn protected_p256_enrollment_and_revocation_without_execution() {
     drop(job); // Receipt-only: never call the executor.
     drop(broker);
     #[cfg(feature = "native-receipt-lab")]
-    protected_receipt_socket_roundtrip(&config);
+    {
+        protected_receipt_socket_roundtrip(&config, false);
+        let mut loss = config.clone();
+        loss.state_dir = dir.join("loss-state");
+        loss.socket = dir.join("loss-run/broker.sock");
+        fs::create_dir(&loss.state_dir).unwrap();
+        fs::set_permissions(&loss.state_dir, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::create_dir(loss.state_dir.join("keys")).unwrap();
+        fs::create_dir(loss.socket.parent().unwrap()).unwrap();
+        fs::set_permissions(
+            loss.socket.parent().unwrap(),
+            fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        Broker::pair_key(&loss, false, "native", &format!("p256-sha256:{public}")).unwrap();
+        protected_receipt_socket_roundtrip(&loss, true);
+    }
 }
 
 #[cfg(feature = "native-receipt-lab")]
-#[test]
-#[ignore = "receipt-only server subprocess for disposable root CI"]
-fn protected_receipt_server() {
-    let Ok(raw) = std::env::var("PE_RECEIPT_CONFIG") else {
-        return;
-    };
-    assert_eq!(unsafe { libc::geteuid() }, 0);
-    let config: Config = serde_json::from_str(&raw).unwrap();
-    std::thread::spawn(|| {
-        std::thread::sleep(Duration::from_secs(30));
-        std::process::exit(2);
-    });
-    transport::serve_receipts(config, false).unwrap();
-}
-
-#[cfg(feature = "native-receipt-lab")]
-fn protected_receipt_socket_roundtrip(config: &Config) {
+fn protected_receipt_socket_roundtrip(config: &Config, lose_ack: bool) {
     let run = config.socket.parent().unwrap();
     let peer = run.join("peer-probe");
     fs::copy(std::env::current_exe().unwrap(), &peer).unwrap();
@@ -566,7 +566,8 @@ fn protected_receipt_socket_roundtrip(config: &Config) {
     let private = host.join("host.key");
     fs::write(&private, [27; 32]).unwrap();
     fs::set_permissions(&private, fs::Permissions::from_mode(0o600)).unwrap();
-    for path in [&host, &private] {
+    // Transfer the child first: container root need not have DAC override.
+    for path in [&private, &host] {
         let path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
         assert_eq!(
             unsafe { libc::chown(path.as_ptr(), config.approver_uid, config.socket_gid) },
@@ -627,12 +628,18 @@ fn protected_receipt_socket_roundtrip(config: &Config) {
         fs::write(&path, serde_json::to_vec(&value_record).unwrap()).unwrap();
         fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
     }
+    let controller = run.join("protected-receipt-lab");
+    fs::copy(env!("CARGO_BIN_EXE_protected-receipt-lab"), &controller).unwrap();
+    fs::set_permissions(&controller, fs::Permissions::from_mode(0o755)).unwrap();
+    let config_path = run.join("controller-config.json");
+    fs::write(&config_path, serde_json::to_vec(config).unwrap()).unwrap();
+    fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600)).unwrap();
     let mut server = Cleanup {
         dir: run.to_path_buf(),
         child: Some(
-            Process::new(&peer)
-                .args(["--exact", "protected_receipt_server", "--ignored"])
-                .env("PE_RECEIPT_CONFIG", serde_json::to_string(config).unwrap())
+            Process::new(&controller)
+                .arg(if lose_ack { "serve-lost-ack" } else { "serve" })
+                .arg(&config_path)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .spawn()
@@ -648,12 +655,18 @@ fn protected_receipt_socket_roundtrip(config: &Config) {
     let pending = run.join("pending.json");
     fs::write(&pending, b"").unwrap();
     fs::set_permissions(&pending, fs::Permissions::from_mode(0o666)).unwrap();
-    probe(
-        config,
-        config.agent_uid,
-        "native_request",
-        Some(pending.to_str().unwrap()),
-    );
+    let created = Process::new(&controller)
+        .arg("request")
+        .arg(&config_path)
+        .output()
+        .unwrap();
+    assert!(created.status.success(), "{:?}", created);
+    let value: serde_json::Value = serde_json::from_slice(&created.stdout).unwrap();
+    fs::write(
+        &pending,
+        serde_json::to_vec(&value["envelope"]["id"]).unwrap(),
+    )
+    .unwrap();
     let cancelled_id: String = serde_json::from_slice(&fs::read(&pending).unwrap()).unwrap();
     probe(
         config,
@@ -670,7 +683,35 @@ fn protected_receipt_socket_roundtrip(config: &Config) {
     );
     let id: String = serde_json::from_slice(&fs::read(&pending).unwrap()).unwrap();
     probe(config, config.agent_uid, "native_agent_approve", Some(&id));
-    probe(config, config.approver_uid, "native_receipt", Some(&id));
+    probe(
+        config,
+        config.approver_uid,
+        if lose_ack {
+            "native_lost_ack"
+        } else {
+            "native_receipt"
+        },
+        Some(&id),
+    );
+    if lose_ack {
+        let fault: serde_json::Value =
+            serde_json::from_slice(&fs::read(config.state_dir.join("ack-loss.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            fault,
+            serde_json::json!({"attempts":1,"dropped":true,"id":id})
+        );
+    }
+    let observed = Process::new(&controller)
+        .arg("status")
+        .arg(&config_path)
+        .arg(&id)
+        .output()
+        .unwrap();
+    assert!(observed.status.success(), "{:?}", observed);
+    let value: serde_json::Value = serde_json::from_slice(&observed.stdout).unwrap();
+    assert_eq!(value["state"], "consumed");
+    assert_eq!(value["receipt_only"], true);
     probe(config, 10003, "foreign", None);
     assert!(transport::call_protected(&config.socket, &Request::ExecutionStatus { id }).is_err());
     assert!(!run.join("must-not-exist").exists());
@@ -738,6 +779,43 @@ fn native_receipt_peer(config: &Config) {
         };
         (count, output)
     };
+    if operation == "native_lost_ack" {
+        use p256::ecdsa::{signature::Signer as _, Signature, SigningKey};
+        let value = transport::call_protected(
+            &config.socket,
+            &Request::ExecutionStatus {
+                id: argument.clone(),
+            },
+        )
+        .unwrap();
+        let pending: PendingView = serde_json::from_value(value["pending"].clone()).unwrap();
+        let key = SigningKey::from_slice(&[27; 32]).unwrap();
+        let signature: Signature =
+            key.sign(&pending.envelope.receipt_approval_payload(false).unwrap());
+        let input = serde_json::to_vec(
+            &serde_json::json!({"enrollment":run.join("enrollment.json"),
+            "id":argument,"signature":hex::encode(signature.to_der()),"share_output":false}),
+        )
+        .unwrap();
+        assert_eq!(
+            unsafe { sudo_relay_submit_receipt(input.as_ptr(), input.len()) },
+            -1
+        );
+        let value = transport::call_protected(
+            &config.socket,
+            &Request::ExecutionStatus {
+                id: argument.clone(),
+            },
+        )
+        .unwrap();
+        assert_eq!(value["state"], "consumed");
+        // Re-entering the bridge must reject the consumed request without a second submission.
+        assert_eq!(
+            unsafe { sudo_relay_submit_receipt(input.as_ptr(), input.len()) },
+            -1
+        );
+        return;
+    }
     if operation == "native_agent_approve" {
         #[cfg(target_os = "macos")]
         {

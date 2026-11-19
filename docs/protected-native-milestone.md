@@ -4,7 +4,43 @@ Agreed scope: November 10, 2026. One end-to-end macOS receipt flow, then stop fo
 review. No execution, sudo/PAM changes, remote-host work, Linux UI, release work
 or icon changes belong to this milestone.
 
+## Current checkpoint
+
+November 11: Astra created and read back the protected test key with Touch ID.
+The user subsequently ran the administrator pairing/approval harness on Astra
+and reported success: each phase recorded one consumed receipt, verified the app
+acknowledgement and left the execution canary absent; temporary installation
+removal was reported. See [the hardware result](protected-review-test-summary.md).
+The subsequent five-case hardware kit also passed: Deny, fingerprint cancellation,
+expiry before/during authentication and verifier disconnect before submission.
+See [the failure-case evidence](protected-review-test-summary.md). This establishes
+those receipt-only paths for their pinned builds. The subsequent
+[lost-acknowledgement hardware case](protected-review-test-summary.md) also passed:
+one durable receipt, one submission, no app success acknowledgement and no
+execution. Stop for review of the evidence and remaining scope; this is not
+production-security certification.
+The historical blockers below describe the sequence of findings, not the current
+signing-account setup.
+
 ## Done means
+
+**November 11 blocker:** the Personal Team app now builds signed, but an
+agent-signed substitute read a dummy marker in its Keychain group. The marker was
+deleted; no approval key was enrolled. See [the boundary test](protected-review-test-summary.md).
+The earlier preparation evidence below predates that test. Completion requires a
+signing authority the agent cannot use to impersonate the reviewer.
+
+**Astra follow-up:** the returned ordinary-account report passed owner read,
+ad-hoc outsider denial, exact-marker deletion and absence checks using a separate
+team. Its exact signing identity was not listed in that account. Modified-app
+impersonation and protected Touch ID integration remain open; this milestone is
+not complete. Evidence is in the boundary-test document linked above.
+
+**Modified-app follow-up:** the three tested variants have explained rejection
+outcomes on Astra. The focused report correlates the copied-claims child's PID and
+exact path with macOS rejecting ad-hoc code carrying restricted entitlements.
+Owner controls and marker cleanup passed. This closes that specific diagnostic
+gap, not the broader signing-authority, protected enrollment or Touch ID gates.
 
 - The native reviewer receives only a protected enrollment reference and request ID.
   It fetches the frozen request from an authenticated, separate verifier; the
@@ -47,6 +83,12 @@ in the worktree; it is not part of the new protected flow's evidence. The approv
 icon replacement is deferred until after this milestone review.
 
 ## Integration built for this milestone
+
+November 11 update: explicit native key setup/removal and the isolated-group
+Keychain store now build; [Astra handoff and validation](protected-review-test-summary.md)
+are prepared. The setup exports an untrusted public candidate, not an admin-paired
+record. Protected pairing, installation and the hardware end-to-end flow remain
+open. The following initial-integration description predates these additions.
 
 `ProtectedNativeApp.swift` joins the existing native panel to the protected
 `BrokerReview` fetch, one-attempt `ProtectedReceiptDecision`, Touch ID signer and

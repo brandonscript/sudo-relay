@@ -68,3 +68,15 @@ The [November 10 chat approval research and design](chat-approval-design.md) pro
 ## Native review work in progress
 
 The [receipt-only native review lab](native-review-boundary.md) now authenticates the request before rendering, freezes the complete output-sharing decision before signing, and checks that decision against a separately retained request and key before one-use consumption. Ten native protocol/UI tests passed with disposable software keys. The participant screenshot and process output also confirmed one native Touch ID receipt with replay rejected. This does not close blocker 3: protected installation, key enrollment, process/IPC isolation and real host integration remain open; the trial has no execution path.
+
+## November 11: disposable broker-to-sudo integration
+
+The [bounded Linux integration](integrated-sudo-milestone.md) now connects this
+branch's actual broker CBOR verification and consumption to native sudo through
+a container-only adapter. Two sudo-enrolled accounts, revocation, native command
+restrictions, replay/alteration, NOPASSWD, real cached authentication, expiry and
+crashes are exercised together. This is progress beyond the original separate
+prototype; it does not switch the normal MCP service to that adapter. Production
+installer provenance, host authentication coexistence and macOS execution remain
+open. See the new report for exact evidence and exclusions rather than treating
+the historical blockers above as either all resolved or all untouched.

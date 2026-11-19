@@ -37,14 +37,14 @@ public enum BiometricSigning {
         } catch BiometricSigningError.noninteractiveSigningSucceeded {
             throw BiometricSigningError.noninteractiveSigningSucceeded
         } catch {
-            print("Noninteractive attempt produced no signature (\(errorSummary(error))).")
+            FileHandle.standardError.write(Data("Noninteractive attempt produced no signature (\(errorSummary(error))).\n".utf8))
         }
         let approval = context()
         approval.localizedReason = reason
         defer { approval.invalidate() }
         let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: keyData, authenticationContext: approval)
         let signature = try key.signature(for: bytes)
-        FileHandle.standardOutput.write(Data("Interactive signature returned; verifying receipt next.\n".utf8))
+        FileHandle.standardError.write(Data("Interactive signature returned; verifying receipt next.\n".utf8))
         return signature
     }
 

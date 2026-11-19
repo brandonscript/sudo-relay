@@ -1,0 +1,16 @@
+# Separate full Linux guest; never use Colima's LIMA_HOME.
+base:
+  - template:ubuntu-24.04
+vmType: vz
+arch: aarch64
+cpus: 2
+memory: 4GiB
+disk: 24GiB
+plain: true
+mounts: []
+ssh:
+  forwardAgent: false
+  loadDotSSHPubKeys: false
+containerd:
+  system: false
+  user: false

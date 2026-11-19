@@ -189,7 +189,7 @@ with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
         packaged = run("/usr/bin/xcrun", "swift", "-module-cache-path", str(root / "modules"),
                        str(SOURCE.parent / "touch-id/package-lab.swift"), str(native_binary))
         app = Path(packaged.stdout.strip())
-        assert app.is_dir() and app.name == "sudo-relay lab.app"
+        assert app.is_dir() and app.name == "sudo-relay.app"
         shutil.copytree(helper, app / helper_relative)
         info_path = app / "Contents/Info.plist"
         info = plistlib.loads(info_path.read_bytes())

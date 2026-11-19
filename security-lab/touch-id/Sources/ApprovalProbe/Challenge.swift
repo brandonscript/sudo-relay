@@ -20,6 +20,15 @@ public func reviewFailureNotice(_ error: Error) -> (title: String, message: Stri
     return ("Test approval failed", "Nothing executes in this lab.\n\(errorSummary(error))")
 }
 
+public func executionFailureNotice(_ error: Error) -> (title: String, message: String) {
+    if case ReviewError.submissionUnconfirmed = error {
+        return ("Approval confirmation lost",
+            "The Linux command may have run, but confirmation was lost. No retry was attempted. Check its status in chat.")
+    }
+    return ("Approval failed",
+        "The execution review stopped. No automatic retry was attempted. " + errorSummary(error))
+}
+
 // Authentication errors can include biometric configuration metadata in userInfo.
 public func errorSummary(_ error: Error) -> String {
     let error = error as NSError

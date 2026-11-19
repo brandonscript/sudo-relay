@@ -1,6 +1,6 @@
 # Security model
 
-The broker accepts one signed approval for one stored request. Its safety depends on the approving host and broker remaining trustworthy. This is an experimental implementation, not independently audited software. The README lists [tested behavior and open compromise paths](../README.md#security-status); that list is not exhaustive.
+The broker accepts one signed approval for one stored request. Its safety depends on the approving host and broker remaining trustworthy. This is an experimental implementation, not independently audited software. The README lists [tested behavior and open compromise paths](../README.md#disclaimer); that list is not exhaustive.
 
 ## Intended protections
 

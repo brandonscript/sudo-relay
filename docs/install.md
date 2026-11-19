@@ -1,4 +1,9 @@
-# Installation and removal
+# Legacy direct-root broker installation and removal
+
+For the sponsor-aware, fixed-command Linux/Mac workflow, use the
+[developer preview instructions](../preview/README.md). This document describes
+the older direct-root broker; it does not enforce sponsoring-sudoer revocation.
+Do not combine these installation paths or treat its commands as preview setup.
 
 Production requires different agent and approver user IDs. The included HTTP host is preview-only and cannot approve requests. A separately reviewed signer that authenticates each human approval is required before live use.
 

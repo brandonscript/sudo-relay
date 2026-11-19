@@ -52,12 +52,21 @@ public struct ReviewRequest: Codable, Equatable, Sendable {
 }
 
 public protocol NativeReviewContent: Sendable {
+    var title: String { get }
+    var purposeText: String { get }
+    var outputLabel: String { get }
     var subtitle: String { get }
     var commandLabel: String { get }
     var createdAt: Int64 { get }
     var expiresAt: Int64 { get }
     func commandText() -> String
     func reviewText() throws -> String
+}
+
+public extension NativeReviewContent {
+    var title: String { "Approval test" }
+    var purposeText: String { "Record one signed test receipt for the command below. Nothing runs." }
+    var outputLabel: String { "Share command output with the agent (test preference)" }
 }
 
 public struct AuthenticatedReview: NativeReviewContent {

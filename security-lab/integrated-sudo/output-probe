@@ -1,0 +1,5 @@
+#!/usr/local/bin/python3 -I
+"""Fixed synthetic output; no arguments or real data. Read-only container image."""
+import sys
+sys.stdout.write('STDOUT-CANARY:' + 'x' * (1024 * 1024))
+sys.stderr.write('STDERR-CANARY')

@@ -19,19 +19,24 @@ struct NativeClient {
             do { try await review() }
             catch {
                 report("native-review-stopped", error: error)
-                if requiresErrorNotice(error) {
-                    let alert = NSAlert()
-                    let notice = reviewFailureNotice(error)
-                    alert.messageText = notice.title
-                    alert.informativeText = notice.message
-                    alert.addButton(withTitle: "Close")
-                    alert.runModal()
-                }
-                exit(1)
+                stop(error: error)
             }
             exit(0)
         }
         app.run()
+    }
+
+    // Terminal failures never restart review or resubmit a proof.
+    static func stop(error: Error, code: Int32 = 1) -> Never {
+        if requiresErrorNotice(error) {
+            let notice = reviewFailureNotice(error)
+            let alert = NSAlert()
+            alert.messageText = notice.title
+            alert.informativeText = notice.message
+            alert.addButton(withTitle: "Close")
+            alert.runModal()
+        }
+        exit(code)
     }
 
     static func enrollFixture() throws {
@@ -92,10 +97,12 @@ struct NativeClient {
         defer { connection.invalidate() }
         let proxy = connection.remoteObjectProxyWithErrorHandler { @Sendable error in
             // An ambiguous disconnect must never trigger a new signing attempt or submission.
-            report("peer-disconnected-outcome-unconfirmed", error: error); exit(1)
+            report("peer-disconnected-outcome-unconfirmed", error: error)
+            Task { @MainActor in stop(error: ReviewError.submissionUnconfirmed) }
         } as! PeerReceiptProtocol
         DispatchQueue.global().asyncAfter(deadline: .now() + 360) {
-            report("native-review-timeout-outcome-unconfirmed"); exit(2)
+            report("native-review-timeout-outcome-unconfirmed")
+            Task { @MainActor in stop(error: ReviewError.submissionUnconfirmed, code: 2) }
         }
         let hello: String = await withCheckedContinuation { continuation in
             proxy.hello { continuation.resume(returning: $0) }

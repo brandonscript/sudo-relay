@@ -117,7 +117,7 @@ Linux requires a separately evaluated mechanism; these are macOS-specific tests.
 ## Native reviewer trial
 
 `python3 security-lab/xpc-peer/check.py --prepare-native` also prepares a temporary
-`sudo-relay lab.app`, using the existing shield icon and native review form. It
+`sudo-relay.app`, using the existing shield icon and native review form. It
 prints the app path but does not launch it. The ordinary automated run compiles
 this client without invoking biometrics. The manual app runs these steps:
 

@@ -20,7 +20,7 @@ public final class NativeReviewForm: NSView {
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.contentTintColor = .labelColor
         addSubview(icon)
-        let title = label("Approval test", frame: NSRect(x: 58, y: 21, width: 240, height: 30))
+        let title = label(review.title, frame: NSRect(x: 58, y: 21, width: 240, height: 30))
         title.font = .systemFont(ofSize: 20, weight: .semibold)
         expiry.frame = NSRect(x: 324, y: 24, width: 232, height: 22)
         expiry.alignment = .right; expiry.textColor = .secondaryLabelColor
@@ -29,7 +29,7 @@ public final class NativeReviewForm: NSView {
         addSubview(expiry)
         label(review.subtitle, frame: NSRect(x: 24, y: 77, width: 532, height: 22), muted: true)
         label("What you’re approving", frame: NSRect(x: 24, y: 116, width: 532, height: 22), muted: true)
-        let purpose = label("Record one signed test receipt for the command below. Nothing runs.", frame: NSRect(x: 24, y: 144, width: 532, height: 40))
+        let purpose = label(review.purposeText, frame: NSRect(x: 24, y: 144, width: 532, height: 40))
         purpose.font = .systemFont(ofSize: 15)
         purpose.lineBreakMode = .byWordWrapping; purpose.maximumNumberOfLines = 2
         label(review.commandLabel, frame: NSRect(x: 24, y: 191, width: 532, height: 22), muted: true)
@@ -48,6 +48,7 @@ public final class NativeReviewForm: NSView {
         let detailsButton = NSButton(title: "Details…", target: self, action: #selector(showDetails))
         detailsButton.frame = NSRect(x: 24, y: 325, width: 100, height: 28)
         addSubview(detailsButton)
+        share.title = review.outputLabel
         share.frame = NSRect(x: 24, y: 365, width: 532, height: 26); share.state = .off
         addSubview(share)
         approve.frame = NSRect(x: 24, y: 410, width: 414, height: 32)
@@ -102,7 +103,7 @@ public final class NativeReviewPanel: NSPanel, NSWindowDelegate {
     public init(review: any NativeReviewContent) throws {
         form = try NativeReviewForm(review: review)
         super.init(contentRect: form.bounds, styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        title = "Approval test"; titleVisibility = .hidden
+        title = review.title; titleVisibility = .hidden
         contentView = form; delegate = self
         isReleasedWhenClosed = false
         defaultButtonCell = form.approve.cell as? NSButtonCell

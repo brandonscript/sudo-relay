@@ -12,6 +12,7 @@ cargo build --locked --lib
 swiftc -swift-version 6 -warnings-as-errors -module-cache-path "$check_dir/modules" \
   -I security-lab/native-protocol \
   security-lab/native-protocol/ProtectedNativeApp.swift \
+  security-lab/native-protocol/ReceiptSigningKeyStore.swift \
   security-lab/native-protocol/ProtectedReceiptDecision.swift \
   security-lab/native-protocol/BrokerReview.swift \
   security-lab/touch-id/Sources/ApprovalProbe/ReviewBoundary.swift \

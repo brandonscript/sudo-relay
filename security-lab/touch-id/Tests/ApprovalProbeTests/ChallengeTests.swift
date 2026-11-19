@@ -68,3 +68,16 @@ import Testing
     #expect(!requiresErrorNotice(ReviewError.expired))
     #expect(!requiresErrorNotice(NSError(domain: LAError.errorDomain, code: LAError.Code.userCancel.rawValue)))
 }
+
+@Test func executionErrorsDoNotUseReceiptTestCopyOrHideUncertainExecution() {
+    let failed = executionFailureNotice(ReviewError.invalidAuthority)
+    #expect(failed.title == "Approval failed")
+    #expect(failed.message.contains("No automatic retry"))
+    #expect(!failed.message.contains("Nothing executes"))
+    #expect(requiresErrorNotice(ReviewError.invalidAuthority))
+    let uncertain = executionFailureNotice(ReviewError.submissionUnconfirmed)
+    #expect(uncertain.title == "Approval confirmation lost")
+    #expect(uncertain.message.contains("may have run"))
+    #expect(uncertain.message.contains("No retry was attempted"))
+    #expect(requiresErrorNotice(ReviewError.submissionUnconfirmed))
+}

@@ -1,8 +1,17 @@
 # Receipt-only installation proposal for this Mac
 
+Current Astra proposal: [temporary administrator pairing](protected-review-test-summary.md).
+It uses one automatically removed `/private/var/db/sr-receipt-<random>` directory,
+not the persistent helper locations below. The original proposal is retained as
+historical context and is not installation authorization.
+
 Prepared November 10, 2026. **For review, not installation approval.** The user
-selected this Mac for a narrowly scoped test. Nothing below has been installed,
-signed with a personal certificate, enrolled in Keychain or launched as root.
+selected this Mac for a narrowly scoped test. November 11 update: the app was signed
+with the authorized Personal Team and a disposable Keychain marker was created,
+tested and deleted. A separately signed substitute read it: see
+[the blocking result](protected-review-test-summary.md). No approval key, privileged
+installation or root launch has occurred. The original proposal below remains
+unapproved for installation; its preflight observations predate this experiment.
 
 ## What you would be approving
 
@@ -51,8 +60,9 @@ requester controller is still to be implemented and tested before installation.
 
 ## Signing and Keychain gates
 
-The existing interactive app only reads a pre-enrolled item; it does not create
-one. Provisioning remains unfinished. Apple requires provisioning-profile authority
+The reviewer now has explicit biometric key setup/removal, prepared for Astra;
+hardware validation and authenticated administrator pairing remain unfinished.
+See [the staged handoff](protected-review-test-summary.md). Apple requires provisioning-profile authority
 for the entitlements used by the data-protection Keychain; a certificate or an
 ad-hoc signature alone is insufficient. See [Apple TN3137](https://developer.apple.com/documentation/technotes/tn3137-on-mac-keychains).
 
@@ -87,7 +97,7 @@ session approval. No import of the earlier agent-readable fixture key.
 5. Run the milestone's success/cancellation/expiry/replay/disconnect scenarios,
    inspect the ledger and stop. Remove the fixture after the user reviews results.
 
-The installer/launcher and enrollment/removal actions are not yet complete, so
+The installer/launcher and authenticated pairing are not yet complete, so
 there is deliberately no `sudo ... install` command to run from this proposal.
 
 ## Read-only preflight

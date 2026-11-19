@@ -11,6 +11,15 @@ crate-type = ["rlib", "staticlib"]
 [features]
 host-probe = []
 native-receipt-lab = []
+integrated-sudo-lab = []
+vm-sudo-lab = ["integrated-sudo-lab"]
+developer-preview = ["integrated-sudo-lab"]
+native-execution-lab = []
+
+[[bin]]
+name = "protected-receipt-lab"
+path = "security-lab/native-install/controller.rs"
+required-features = ["native-receipt-lab"]
 
 [[bin]]
 name = "receipt-verifier"
@@ -41,3 +50,18 @@ uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3"
+
+[[bin]]
+name = "integrated-sudo-lab"
+path = "security-lab/integrated-sudo/controller.rs"
+required-features = ["integrated-sudo-lab"]
+
+[[bin]]
+name = "execution-review-check"
+path = "security-lab/native-execution/bridge-check.rs"
+required-features = ["native-execution-lab"]
+
+[[bin]]
+name = "sudo-relay-preview"
+path = "preview/broker.rs"
+required-features = ["developer-preview"]

@@ -77,11 +77,15 @@ From this directory, after building the lab:
 
 ```sh
 swift package-lab.swift /absolute/path/to/touch-id-probe
-open -n "/printed/path/sudo-relay lab.app" --args --review-boundary
+open -n "/printed/path/sudo-relay.app" --args --review-boundary
 ```
 
-The script copies the existing binary into a fresh temporary directory, renders the native shield into an icon set, converts it with macOS `iconutil`, and writes bundle metadata. It checks byte-for-byte binary correspondence and executable lookup. It neither launches nor installs the app. With restricted compiler caches, add `-module-cache-path /private/tmp/sudo-relay-swift-modules` after `swift`. Icon conversion failed inside the development process sandbox but succeeded outside it; this does not require changing macOS privacy permissions.
+The script copies the existing binary into a fresh temporary directory, renders the approved original SVG into an icon set, converts it with macOS `iconutil`, and writes bundle metadata. It checks byte-for-byte binary correspondence and executable lookup. It neither launches nor installs the app. With restricted compiler caches, add `-module-cache-path /private/tmp/sudo-relay-swift-modules` after `swift`. Icon conversion failed inside the development process sandbox but succeeded outside it; this does not require changing macOS privacy permissions.
 
 This is packaging for the local receipt lab, not protected installation, Developer ID signing, notarization or production enrollment. The app remains writable by its owner. Close it and remove its generated temporary directory when finished. Use the lab's real arguments (`--run` or `--review-boundary`); opening it without arguments prints usage and exits.
 
 Bundle icon metadata follows [Apple's Info.plist reference](https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html). Linux packaging and cross-platform asset distribution remain to be reviewed.
+
+The retained packager now uses the approved original shield-and-link artwork and
+the app name `sudo-relay`. Earlier visual results above predate this change; the
+new signed Touch ID prompt and Dock appearance still need a hardware check.

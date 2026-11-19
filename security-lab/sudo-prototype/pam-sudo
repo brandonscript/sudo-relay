@@ -1,0 +1,4 @@
+# Disposable container only. Never include this stack in a real host's sudo service.
+auth required /usr/local/lib/pam_relay_prototype.so
+account required pam_unix.so
+session required pam_permit.so

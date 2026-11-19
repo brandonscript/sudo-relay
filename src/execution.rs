@@ -3,7 +3,7 @@ use crate::{
     protocol::{Command as RequestedCommand, Envelope, Spec},
 };
 use anyhow::{ensure, Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, OpenOptions},
     io::{Read, Write},
@@ -18,7 +18,7 @@ use std::{
 };
 
 const OUTPUT_LIMIT: usize = 1024 * 1024;
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Outcome {
     pub exit_code: Option<i32>,
     pub stdout: String,

@@ -158,6 +158,10 @@ struct BrokerReview: NativeReviewContent {
     }
 
     func reviewText() throws -> String {
+        try detailsText(purpose: "RECEIPT ONLY — NO COMMAND RUNS")
+    }
+
+    func detailsText(purpose: String) throws -> String {
         let envelope = prepared.envelope
         let spec = envelope.spec
         let command: String
@@ -168,7 +172,7 @@ struct BrokerReview: NativeReviewContent {
             command = "Interpreter: \(interpreter)\nComplete script:\n\(body)"
         }
         return """
-        RECEIPT ONLY — NO COMMAND RUNS
+        \(purpose)
         Target: \(subtitle)
         Machine identity: \(envelope.machine_id)
         Request: \(envelope.id)
