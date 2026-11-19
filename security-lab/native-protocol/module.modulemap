@@ -1,0 +1,4 @@
+module ReviewCore {
+    header "ReviewCore.h"
+    export *
+}

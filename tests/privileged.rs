@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 use sudo_relay::{
-    broker::{protected_path, Config},
+    broker::{protected_path, read_protected_file, Config},
     protocol::{Command, PendingView, Request, Spec},
     transport,
 };
@@ -92,6 +92,7 @@ fn root_broker_enforces_identity_and_protected_paths() {
         approver_uid: 10002,
         socket_gid: 10001,
         approval_ttl_secs: 300,
+        max_execution_secs: 300,
         state_dir: state,
         socket: dir.join("broker.sock"),
     };
@@ -181,6 +182,14 @@ fn unprivileged_peer_probe() {
     } else {
         assert!(fs::read(signing_key).is_err());
     }
+    #[cfg(feature = "native-receipt-lab")]
+    if std::env::var("PE_OPERATION")
+        .unwrap()
+        .starts_with("native_")
+    {
+        native_receipt_peer(&config);
+        return;
+    }
     let spec = Spec {
         command: Command::Argv {
             argv: vec!["/usr/bin/printf".into(), "root integration".into()],
@@ -234,4 +243,764 @@ fn unprivileged_peer_probe() {
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(20));
     }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "root only; run in disposable macOS CI"]
+fn root_owned_paths_reject_acl_writable_ancestors() {
+    assert_eq!(unsafe { libc::geteuid() }, 0);
+    let dir =
+        PathBuf::from("/private/var").join(format!("sudo-relay-acl-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&dir).unwrap();
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+    let _cleanup = Cleanup {
+        dir: dir.clone(),
+        child: None,
+    };
+    let file = dir.join("trust.pub");
+    fs::write(&file, "public test data").unwrap();
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+    protected_path(&file, 0).unwrap();
+    for target in [&dir, &file] {
+        let permissions = if target == &dir {
+            "everyone allow add_file,delete_child"
+        } else {
+            "everyone allow write"
+        };
+        assert!(Process::new("/bin/chmod")
+            .args(["+a", permissions])
+            .arg(target)
+            .status()
+            .unwrap()
+            .success());
+        let result = protected_path(&file, 0);
+        let read_result = read_protected_file(&file, 1024);
+        assert!(Process::new("/bin/chmod")
+            .arg("-N")
+            .arg(target)
+            .status()
+            .unwrap()
+            .success());
+        assert!(result.unwrap_err().to_string().contains("extended ACL"));
+        assert!(read_result
+            .unwrap_err()
+            .to_string()
+            .contains("extended ACL"));
+        protected_path(&file, 0).unwrap();
+    }
+}
+
+#[test]
+#[ignore = "root only; run in disposable CI machines"]
+fn protected_reads_reject_unsafe_or_unbounded_files() {
+    assert_eq!(unsafe { libc::geteuid() }, 0);
+    let parent = if cfg!(target_os = "macos") {
+        "/private/var"
+    } else {
+        "/var/lib"
+    };
+    let dir = PathBuf::from(parent).join(format!("sudo-relay-read-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&dir).unwrap();
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+    let _cleanup = Cleanup {
+        dir: dir.clone(),
+        child: None,
+    };
+    let file = dir.join("policy");
+    fs::write(&file, b"test policy").unwrap();
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(read_protected_file(&file, 11).unwrap(), b"test policy");
+    // Exercise the same C ABI used by the unprivileged Swift policy loader.
+    unsafe extern "C" {
+        fn sudo_relay_read_peer_policy(
+            path: *const u8,
+            path_len: usize,
+            output: *mut u8,
+            capacity: usize,
+        ) -> isize;
+    }
+    let path = file.as_os_str().as_encoded_bytes();
+    let mut output = [0xaa; 32];
+    assert_eq!(
+        unsafe { sudo_relay_read_peer_policy(path.as_ptr(), path.len(), output.as_mut_ptr(), 10) },
+        -2
+    );
+    assert_eq!(output, [0xaa; 32]);
+    assert_eq!(
+        unsafe {
+            sudo_relay_read_peer_policy(
+                path.as_ptr(),
+                path.len(),
+                output.as_mut_ptr(),
+                output.len(),
+            )
+        },
+        11
+    );
+    assert_eq!(&output[..11], b"test policy");
+    assert_eq!(&output[11..], &[0xaa; 21]);
+    assert!(read_protected_file(&file, 10).is_err());
+    assert!(read_protected_file(&file, 0).is_err());
+    assert!(read_protected_file(&file, usize::MAX).is_err());
+    assert!(read_protected_file(&dir, 1024).is_err());
+    for target in [&dir, &file] {
+        fs::set_permissions(target, fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(read_protected_file(&file, 1024).is_err());
+        fs::set_permissions(target, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let fifo = dir.join("fifo");
+    let fifo_c = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(fifo_c.as_ptr(), 0o600) }, 0);
+    assert!(read_protected_file(&fifo, 1024).is_err());
+    let file_c = std::ffi::CString::new(file.as_os_str().as_encoded_bytes()).unwrap();
+    assert_eq!(unsafe { libc::chown(file_c.as_ptr(), 10001, 10001) }, 0);
+    assert!(read_protected_file(&file, 1024).is_err());
+}
+
+#[test]
+fn protected_reads_reject_user_owned_policy() {
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("policy");
+    fs::write(&file, b"test policy").unwrap();
+    assert!(read_protected_file(&file, 1024).is_err());
+}
+
+#[test]
+#[ignore = "root only; receipt-only enrollment in disposable CI machines"]
+fn protected_p256_enrollment_and_revocation_without_execution() {
+    use p256::ecdsa::{signature::Signer as _, Signature, SigningKey as P256Key};
+    use std::os::unix::fs::MetadataExt;
+    use sudo_relay::broker::Broker;
+    assert_eq!(unsafe { libc::geteuid() }, 0);
+    let parent = if cfg!(target_os = "macos") {
+        "/private/var"
+    } else {
+        "/var/lib"
+    };
+    let dir = PathBuf::from(parent).join(format!("sudo-relay-pair-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&dir).unwrap();
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+    let _cleanup = Cleanup {
+        dir: dir.clone(),
+        child: None,
+    };
+    let binary = dir.join("broker");
+    fs::copy(env!("CARGO_BIN_EXE_broker"), &binary).unwrap();
+    fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
+    let config_path = dir.join("config.json");
+    let state = dir.join("state");
+    let socket = dir.join("run/broker.sock");
+    let initialized = Process::new(&binary)
+        .arg("init")
+        .arg(&config_path)
+        .arg(&state)
+        .arg(&socket)
+        .args(["10001", "10002", "10001"])
+        .output()
+        .unwrap();
+    assert!(
+        initialized.status.success(),
+        "{}",
+        String::from_utf8_lossy(&initialized.stderr)
+    );
+    let key = P256Key::from_slice(&[27; 32]).unwrap();
+    let public = hex::encode(key.verifying_key().to_sec1_point(false));
+    let enroll = |uid: u32, method: &str, extra: &[&str]| {
+        let mut command = Process::new(&binary);
+        command
+            .arg(method)
+            .arg(&config_path)
+            .arg("native")
+            .args(extra);
+        unsafe {
+            command.pre_exec(move || {
+                if libc::setgroups(0, std::ptr::null()) != 0
+                    || libc::setgid(uid) != 0
+                    || libc::setuid(uid) != 0
+                {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        command.output().unwrap()
+    };
+    for uid in [10001, 10002] {
+        assert!(!enroll(uid, "pair-p256", &[&public]).status.success());
+    }
+    let keyfile = state.join("keys/native.pub");
+    assert!(!keyfile.exists());
+    assert!(!enroll(0, "pair-p256", &[&"00".repeat(65)]).status.success());
+    assert!(!keyfile.exists());
+    assert!(enroll(0, "pair-p256", &[&public]).status.success());
+    let original = fs::read(&keyfile).unwrap();
+    assert_eq!(original, format!("p256-sha256:{public}").as_bytes());
+    let metadata = fs::metadata(&keyfile).unwrap();
+    assert_eq!(metadata.uid(), 0);
+    assert_eq!(metadata.mode() & 0o777, 0o600);
+    assert!(!enroll(0, "pair-p256", &[&public]).status.success());
+    for uid in [10001, 10002] {
+        assert!(!enroll(uid, "revoke", &[]).status.success());
+    }
+    assert_eq!(fs::read(&keyfile).unwrap(), original);
+    let config: Config = serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    let mut broker = Broker::open(config.clone(), false).unwrap();
+    let (_, job) = broker
+        .handle(
+            Request::RequestExecution {
+                spec: Spec {
+                    command: Command::Argv {
+                        argv: vec!["/usr/bin/true".into()],
+                    },
+                    reason: "Receipt-only enrollment check; never execute".into(),
+                    timeout_secs: 30,
+                    env: BTreeMap::new(),
+                    output_needed: false,
+                },
+            },
+            config.agent_uid,
+            100,
+        )
+        .unwrap();
+    assert!(job.is_none());
+    // Read the frozen request from the ledger without opening a command-execution service.
+    let db = rusqlite::Connection::open(state.join("state.sqlite3")).unwrap();
+    let json: String = db
+        .query_row("SELECT envelope FROM requests", [], |row| row.get(0))
+        .unwrap();
+    let envelope: sudo_relay::protocol::Envelope = serde_json::from_str(&json).unwrap();
+    let signature: Signature = key.sign(&envelope.approval_payload(false).unwrap());
+    let approval = || Request::Approve {
+        id: envelope.id.clone(),
+        key_id: "native".into(),
+        number: envelope.number.clone(),
+        share_output: false,
+        signature: hex::encode(signature.to_der()),
+    };
+    assert!(enroll(0, "revoke", &[]).status.success());
+    assert!(!keyfile.exists());
+    assert!(broker.handle(approval(), config.approver_uid, 101).is_err());
+    let status: String = db
+        .query_row("SELECT state FROM requests", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(status, "cancelled");
+    let consumed: u32 = db
+        .query_row(
+            "SELECT count(*) FROM audit WHERE event='consumed'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(consumed, 0);
+    assert!(enroll(0, "pair-p256", &[&public]).status.success());
+    assert!(broker.handle(approval(), config.approver_uid, 102).is_err());
+    let (reply, job) = broker
+        .handle(
+            Request::RequestExecution {
+                spec: envelope.spec.clone(),
+            },
+            config.agent_uid,
+            103,
+        )
+        .unwrap();
+    assert!(job.is_none());
+    let fresh: PendingView = serde_json::from_value(reply.value().unwrap()).unwrap();
+    let signature: Signature = key.sign(&fresh.envelope.approval_payload(false).unwrap());
+    let (_, job) = broker
+        .handle(
+            Request::Approve {
+                id: fresh.envelope.id,
+                key_id: "native".into(),
+                number: fresh.envelope.number,
+                share_output: false,
+                signature: hex::encode(signature.to_der()),
+            },
+            config.approver_uid,
+            104,
+        )
+        .unwrap();
+    assert!(job.is_some());
+    drop(job); // Receipt-only: never call the executor.
+    drop(broker);
+    #[cfg(feature = "native-receipt-lab")]
+    {
+        protected_receipt_socket_roundtrip(&config, false);
+        let mut loss = config.clone();
+        loss.state_dir = dir.join("loss-state");
+        loss.socket = dir.join("loss-run/broker.sock");
+        fs::create_dir(&loss.state_dir).unwrap();
+        fs::set_permissions(&loss.state_dir, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::create_dir(loss.state_dir.join("keys")).unwrap();
+        fs::create_dir(loss.socket.parent().unwrap()).unwrap();
+        fs::set_permissions(
+            loss.socket.parent().unwrap(),
+            fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        Broker::pair_key(&loss, false, "native", &format!("p256-sha256:{public}")).unwrap();
+        protected_receipt_socket_roundtrip(&loss, true);
+    }
+}
+
+#[cfg(feature = "native-receipt-lab")]
+fn protected_receipt_socket_roundtrip(config: &Config, lose_ack: bool) {
+    let run = config.socket.parent().unwrap();
+    let peer = run.join("peer-probe");
+    fs::copy(std::env::current_exe().unwrap(), &peer).unwrap();
+    fs::set_permissions(&peer, fs::Permissions::from_mode(0o755)).unwrap();
+    #[cfg(target_os = "macos")]
+    {
+        let source = std::env::var_os("PE_SWIFT_REVIEW_BINARY")
+            .expect("build the headless native reviewer before root CI");
+        let destination = run.join("native-review-check");
+        fs::copy(source, &destination).unwrap();
+        fs::set_permissions(destination, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let host = run.join("host");
+    fs::create_dir(&host).unwrap();
+    fs::set_permissions(&host, fs::Permissions::from_mode(0o700)).unwrap();
+    let private = host.join("host.key");
+    fs::write(&private, [27; 32]).unwrap();
+    fs::set_permissions(&private, fs::Permissions::from_mode(0o600)).unwrap();
+    // Transfer the child first: container root need not have DAC override.
+    for path in [&private, &host] {
+        let path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(
+            unsafe { libc::chown(path.as_ptr(), config.approver_uid, config.socket_gid) },
+            0
+        );
+    }
+    let signing_key = p256::ecdsa::SigningKey::from_slice(&[27; 32]).unwrap();
+    let other_key = p256::ecdsa::SigningKey::from_slice(&[28; 32]).unwrap();
+    let enrollment = serde_json::json!({"version": 1, "receipt_only": true, "signing_key_id": "native",
+        "signing_key": format!("p256-sha256:{}", hex::encode(signing_key.verifying_key().to_sec1_point(false).as_bytes())),
+        "machine_id": config.machine_id, "socket": config.socket, "approver_uid": config.approver_uid,
+        "machine_name": "protected-receipt-fixture", "operating_system": "Disposable OS fixture", "account": "test-user"});
+    for (name, field, value, mode) in [
+        ("enrollment.json", "version", serde_json::json!(1), 0o644),
+        (
+            "wrong-key-id.json",
+            "signing_key_id",
+            serde_json::json!("unpaired"),
+            0o644,
+        ),
+        (
+            "wrong-key.json",
+            "signing_key",
+            serde_json::json!(format!(
+                "p256-sha256:{}",
+                hex::encode(other_key.verifying_key().to_sec1_point(false).as_bytes())
+            )),
+            0o644,
+        ),
+        (
+            "invalid-key.json",
+            "signing_key",
+            serde_json::json!("p256-sha256:00"),
+            0o644,
+        ),
+        (
+            "wrong-machine.json",
+            "machine_id",
+            serde_json::json!(uuid::Uuid::new_v4().to_string()),
+            0o644,
+        ),
+        (
+            "wrong-account.json",
+            "approver_uid",
+            serde_json::json!(10003),
+            0o644,
+        ),
+        (
+            "writable-enrollment.json",
+            "version",
+            serde_json::json!(1),
+            0o666,
+        ),
+    ] {
+        let mut value_record = enrollment.clone();
+        value_record[field] = value;
+        let path = run.join(name);
+        fs::write(&path, serde_json::to_vec(&value_record).unwrap()).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
+    }
+    let controller = run.join("protected-receipt-lab");
+    fs::copy(env!("CARGO_BIN_EXE_protected-receipt-lab"), &controller).unwrap();
+    fs::set_permissions(&controller, fs::Permissions::from_mode(0o755)).unwrap();
+    let config_path = run.join("controller-config.json");
+    fs::write(&config_path, serde_json::to_vec(config).unwrap()).unwrap();
+    fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600)).unwrap();
+    let mut server = Cleanup {
+        dir: run.to_path_buf(),
+        child: Some(
+            Process::new(&controller)
+                .arg(if lose_ack { "serve-lost-ack" } else { "serve" })
+                .arg(&config_path)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .spawn()
+                .unwrap(),
+        ),
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !config.socket.exists() {
+        assert!(server.child.as_mut().unwrap().try_wait().unwrap().is_none());
+        assert!(Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let pending = run.join("pending.json");
+    fs::write(&pending, b"").unwrap();
+    fs::set_permissions(&pending, fs::Permissions::from_mode(0o666)).unwrap();
+    let created = Process::new(&controller)
+        .arg("request")
+        .arg(&config_path)
+        .output()
+        .unwrap();
+    assert!(created.status.success(), "{:?}", created);
+    let value: serde_json::Value = serde_json::from_slice(&created.stdout).unwrap();
+    fs::write(
+        &pending,
+        serde_json::to_vec(&value["envelope"]["id"]).unwrap(),
+    )
+    .unwrap();
+    let cancelled_id: String = serde_json::from_slice(&fs::read(&pending).unwrap()).unwrap();
+    probe(
+        config,
+        config.approver_uid,
+        "native_cancel",
+        Some(&cancelled_id),
+    );
+    // Consumed receipts deliberately block new work; exercise cancellation first.
+    probe(
+        config,
+        config.agent_uid,
+        "native_request",
+        Some(pending.to_str().unwrap()),
+    );
+    let id: String = serde_json::from_slice(&fs::read(&pending).unwrap()).unwrap();
+    probe(config, config.agent_uid, "native_agent_approve", Some(&id));
+    probe(
+        config,
+        config.approver_uid,
+        if lose_ack {
+            "native_lost_ack"
+        } else {
+            "native_receipt"
+        },
+        Some(&id),
+    );
+    if lose_ack {
+        let fault: serde_json::Value =
+            serde_json::from_slice(&fs::read(config.state_dir.join("ack-loss.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            fault,
+            serde_json::json!({"attempts":1,"dropped":true,"id":id})
+        );
+    }
+    let observed = Process::new(&controller)
+        .arg("status")
+        .arg(&config_path)
+        .arg(&id)
+        .output()
+        .unwrap();
+    assert!(observed.status.success(), "{:?}", observed);
+    let value: serde_json::Value = serde_json::from_slice(&observed.stdout).unwrap();
+    assert_eq!(value["state"], "consumed");
+    assert_eq!(value["receipt_only"], true);
+    probe(config, 10003, "foreign", None);
+    assert!(transport::call_protected(&config.socket, &Request::ExecutionStatus { id }).is_err());
+    assert!(!run.join("must-not-exist").exists());
+    server.child.as_mut().unwrap().kill().unwrap();
+    server.child.as_mut().unwrap().wait().unwrap();
+}
+
+#[cfg(feature = "native-receipt-lab")]
+fn native_receipt_peer(config: &Config) {
+    #[cfg(not(target_os = "macos"))]
+    use p256::ecdsa::{signature::Signer as _, Signature, SigningKey as P256Key};
+    let run = config.socket.parent().unwrap();
+    let operation = std::env::var("PE_OPERATION").unwrap();
+    let argument = std::env::var("PE_APPROVAL").unwrap();
+    assert!(fs::read(config.state_dir.join("keys/native.pub")).is_err());
+    if operation == "native_request" {
+        let value = transport::call_protected(
+            &config.socket,
+            &Request::RequestExecution {
+                spec: Spec {
+                    command: Command::Argv {
+                        argv: vec![
+                            "/usr/bin/touch".into(),
+                            run.join("must-not-exist").to_str().unwrap().into(),
+                        ],
+                    },
+                    reason: "Protected receipt fixture; never execute".into(),
+                    timeout_secs: 30,
+                    env: BTreeMap::new(),
+                    output_needed: false,
+                },
+            },
+        )
+        .unwrap();
+        fs::write(
+            argument,
+            serde_json::to_vec(&value["envelope"]["id"]).unwrap(),
+        )
+        .unwrap();
+        return;
+    }
+    // Retrieve the frozen request directly from the root peer, never from agent-supplied display data.
+    unsafe extern "C" {
+        fn sudo_relay_submit_receipt(input: *const u8, input_len: usize) -> i32;
+        fn sudo_relay_cancel_receipt(input: *const u8, input_len: usize) -> i32;
+        fn sudo_relay_fetch_review(
+            input: *const u8,
+            input_len: usize,
+            output: *mut u8,
+            capacity: usize,
+        ) -> isize;
+    }
+    let fetch = |id: &str, enrollment: &str, capacity: usize| {
+        let reference =
+            serde_json::to_vec(&serde_json::json!({"enrollment": run.join(enrollment), "id": id}))
+                .unwrap();
+        let mut output = vec![0xaa; 65536];
+        let count = unsafe {
+            sudo_relay_fetch_review(
+                reference.as_ptr(),
+                reference.len(),
+                output.as_mut_ptr(),
+                capacity,
+            )
+        };
+        (count, output)
+    };
+    if operation == "native_lost_ack" {
+        use p256::ecdsa::{signature::Signer as _, Signature, SigningKey};
+        let value = transport::call_protected(
+            &config.socket,
+            &Request::ExecutionStatus {
+                id: argument.clone(),
+            },
+        )
+        .unwrap();
+        let pending: PendingView = serde_json::from_value(value["pending"].clone()).unwrap();
+        let key = SigningKey::from_slice(&[27; 32]).unwrap();
+        let signature: Signature =
+            key.sign(&pending.envelope.receipt_approval_payload(false).unwrap());
+        let input = serde_json::to_vec(
+            &serde_json::json!({"enrollment":run.join("enrollment.json"),
+            "id":argument,"signature":hex::encode(signature.to_der()),"share_output":false}),
+        )
+        .unwrap();
+        assert_eq!(
+            unsafe { sudo_relay_submit_receipt(input.as_ptr(), input.len()) },
+            -1
+        );
+        let value = transport::call_protected(
+            &config.socket,
+            &Request::ExecutionStatus {
+                id: argument.clone(),
+            },
+        )
+        .unwrap();
+        assert_eq!(value["state"], "consumed");
+        // Re-entering the bridge must reject the consumed request without a second submission.
+        assert_eq!(
+            unsafe { sudo_relay_submit_receipt(input.as_ptr(), input.len()) },
+            -1
+        );
+        return;
+    }
+    if operation == "native_agent_approve" {
+        #[cfg(target_os = "macos")]
+        {
+            let rejected = Process::new(run.join("native-review-check"))
+                .arg(run.join("enrollment.json"))
+                .arg(&argument)
+                .env("PE_NATIVE_RECEIPT_CHECK", "1")
+                .output()
+                .unwrap();
+            assert!(!rejected.status.success());
+            assert!(rejected.stdout.is_empty());
+        }
+
+        let reference = serde_json::to_vec(&serde_json::json!({
+            "enrollment": run.join("enrollment.json"), "id": argument,
+        }))
+        .unwrap();
+        assert_eq!(
+            unsafe { sudo_relay_cancel_receipt(reference.as_ptr(), reference.len()) },
+            -1,
+            "agent used native approver cancellation"
+        );
+        let (count, output) = fetch(&argument, "enrollment.json", 65536);
+        assert_eq!(count, -1, "agent must not use approver enrollment");
+        assert!(output.iter().all(|byte| *byte == 0xaa));
+        let value =
+            transport::call_protected(&config.socket, &Request::ExecutionStatus { id: argument })
+                .unwrap();
+        let pending: PendingView = serde_json::from_value(value["pending"].clone()).unwrap();
+        assert!(transport::call_protected(
+            &config.socket,
+            &Request::ApproveReceipt {
+                id: pending.envelope.id,
+                key_id: "native".into(),
+                number: pending.envelope.number,
+                share_output: false,
+                signature: String::new()
+            }
+        )
+        .is_err());
+        return;
+    }
+    if operation == "native_cancel" {
+        let input = serde_json::to_vec(&serde_json::json!({
+            "enrollment": run.join("enrollment.json"), "id": argument,
+        }))
+        .unwrap();
+        assert_eq!(
+            unsafe { sudo_relay_cancel_receipt(input.as_ptr(), input.len()) },
+            1
+        );
+        assert_eq!(
+            unsafe { sudo_relay_cancel_receipt(input.as_ptr(), input.len()) },
+            -1
+        );
+        let status =
+            transport::call_protected(&config.socket, &Request::ExecutionStatus { id: argument })
+                .unwrap();
+        assert_eq!(status["state"], "cancelled");
+        assert!(status["outcome"].is_null());
+        assert!(!run.join("must-not-exist").exists());
+        return;
+    }
+    for (id, enrollment, capacity, expected) in [
+        (argument.as_str(), "wrong-machine.json", 65536, -1),
+        (argument.as_str(), "wrong-account.json", 65536, -1),
+        (argument.as_str(), "writable-enrollment.json", 65536, -1),
+        (argument.as_str(), "invalid-key.json", 65536, -1),
+        ("unknown-request", "enrollment.json", 65536, -1),
+        (argument.as_str(), "enrollment.json", 1, -2),
+    ] {
+        let (count, output) = fetch(id, enrollment, capacity);
+        assert_eq!(count, expected);
+        assert!(output.iter().all(|byte| *byte == 0xaa));
+    }
+    let (count, output) = fetch(&argument, "enrollment.json", 65536);
+    assert!(count > 0);
+    let fetched: serde_json::Value = serde_json::from_slice(&output[..count as usize]).unwrap();
+    assert_eq!(
+        fetched["enrollment"]["machine_name"],
+        "protected-receipt-fixture"
+    );
+    let envelope: sudo_relay::protocol::Envelope =
+        serde_json::from_value(fetched["review"]["envelope"].clone()).unwrap();
+    let pending = envelope.view().unwrap();
+    assert_eq!(pending.envelope.machine_id, config.machine_id);
+    assert_eq!(pending.envelope.id, argument);
+    let signing_bytes =
+        hex::decode(fetched["review"]["approval_withheld"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        signing_bytes,
+        pending.envelope.receipt_approval_payload(false).unwrap()
+    );
+    assert_eq!(operation, "native_receipt");
+    // The same key's execution-domain signature must not authorize a receipt.
+    let execution_signature = {
+        use p256::ecdsa::{signature::Signer, Signature, SigningKey};
+        let key = SigningKey::from_slice(&[27; 32]).unwrap();
+        let signature: Signature = key.sign(&pending.envelope.approval_payload(false).unwrap());
+        hex::encode(signature.to_der())
+    };
+    assert!(transport::call_protected(
+        &config.socket,
+        &Request::ApproveReceipt {
+            id: pending.envelope.id.clone(),
+            key_id: "native".into(),
+            number: pending.envelope.number.clone(),
+            share_output: false,
+            signature: execution_signature,
+        }
+    )
+    .is_err());
+    #[cfg(not(target_os = "macos"))]
+    let proof = {
+        let key = P256Key::from_slice(&fs::read(run.join("host/host.key")).unwrap()).unwrap();
+        let signature: Signature = key.sign(&signing_bytes);
+        signature.to_der().as_bytes().to_vec()
+    };
+    #[cfg(target_os = "macos")]
+    let proof = {
+        for record in ["wrong-key.json", "wrong-key-id.json"] {
+            let rejected = Process::new(run.join("native-review-check"))
+                .arg(run.join(record))
+                .arg(&argument)
+                .env("PE_NATIVE_RECEIPT_CHECK", "1")
+                .output()
+                .unwrap();
+            assert!(
+                !rejected.status.success(),
+                "wrong enrolled signing key accepted"
+            );
+            assert!(rejected.stdout.is_empty());
+        }
+        let result = Process::new(run.join("native-review-check"))
+            .arg(run.join("enrollment.json"))
+            .arg(&argument)
+            .env("PE_NATIVE_RECEIPT_CHECK", "1")
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let native: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(native["consumed"], true);
+        assert_eq!(native["id"], pending.envelope.id);
+        assert_eq!(native["number"], pending.envelope.number);
+        assert_eq!(
+            native["subtitle"],
+            "protected-receipt-fixture · Disposable OS fixture · test-user"
+        );
+        assert_eq!(
+            native["command"],
+            format!("/usr/bin/touch {}", run.join("must-not-exist").display())
+        );
+        assert_eq!(native["withheld"], hex::encode(&signing_bytes));
+        assert_eq!(
+            native["shared"],
+            hex::encode(pending.envelope.receipt_approval_payload(true).unwrap())
+        );
+        hex::decode(native["signature"].as_str().unwrap()).unwrap()
+    };
+    let submit = |share_output| {
+        let input = serde_json::to_vec(&serde_json::json!({
+            "enrollment": run.join("enrollment.json"), "id": pending.envelope.id,
+            "signature": hex::encode(&proof), "share_output": share_output,
+        }))
+        .unwrap();
+        unsafe { sudo_relay_submit_receipt(input.as_ptr(), input.len()) }
+    };
+    #[cfg(not(target_os = "macos"))]
+    {
+        assert_eq!(submit(true), -1, "altered sharing accepted");
+        assert_eq!(submit(false), 1);
+    }
+    assert_eq!(submit(false), -1, "replayed native submission accepted");
+    let status = transport::call_protected(
+        &config.socket,
+        &Request::ExecutionStatus {
+            id: pending.envelope.id,
+        },
+    )
+    .unwrap();
+    assert_eq!(status["state"], "consumed");
+    assert!(status["outcome"].is_null());
+    assert!(!run.join("must-not-exist").exists());
 }

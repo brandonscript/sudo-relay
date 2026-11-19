@@ -1,4 +1,9 @@
-# Installation and removal
+# Legacy direct-root broker installation and removal
+
+For the sponsor-aware, fixed-command Linux/Mac workflow, use the
+[developer preview instructions](../preview/README.md). This document describes
+the older direct-root broker; it does not enforce sponsoring-sudoer revocation.
+Do not combine these installation paths or treat its commands as preview setup.
 
 Production requires different agent and approver user IDs. The included HTTP host is preview-only and cannot approve requests. A separately reviewed signer that authenticates each human approval is required before live use.
 
@@ -40,13 +45,33 @@ Initialize with those three numbers, replacing `AGENT_UID`, `APPROVER_UID`, and 
 sudo /usr/local/libexec/sudo-relay/broker init /etc/sudo-relay/config.json /var/lib/sudo-relay /var/run/sudo-relay/broker.sock AGENT_UID APPROVER_UID SOCKET_GID
 ```
 
-This creates a private state directory, a public socket directory, and a machine UUID. Parent directories must be root-owned and not group/world writable. On macOS, create `/var/lib` as a root-owned directory if absent, or supply `/Library/Application Support/sudo-relay` as the quoted state path instead. Do not loosen permissions to make validation pass.
+This creates a private state directory, a public socket directory, and a machine UUID. Parent directories must be root-owned and not group/world writable. On macOS, create `/var/lib` as a root-owned directory if absent, or supply `/Library/Application Support/sudo-relay` as the quoted state path instead. Do not loosen permissions to make validation pass. On macOS, protected paths, their ancestors, and private broker files must have no extended ACL entries. This deliberately rejects restrictive ACLs too; effective ACL interpretation is not implemented. The broker never removes ACLs automatically. Review a rejected path with `ls -lde` and choose a dedicated protected location rather than altering shared system directories.
 
 ## Choose the approval window
 
-The root-owned JSON configuration supports `"approval_ttl_secs": 300`. Omitted values default to five minutes for existing configurations. Set it to a whole number from 1 to 86,400 seconds (one day), then restart the broker. Expiry cannot be disabled or changed by an MCP request. Restart cancels pending requests; the new window applies to newly created requests. The execution timeout is separate and remains capped at 300 seconds.
+The root-owned JSON configuration supports `"approval_ttl_secs": 300`. Omitted values default to five minutes for existing configurations. Set it to a whole number from 1 to 86,400 seconds (one day), then restart the broker. Expiry cannot be disabled or changed by an MCP request. Restart cancels pending requests; the new window applies to newly created requests. The execution timeout is separate; see below.
 
 The card displays the remaining time from the signed expiry, not a fixed five-minute label.
+
+## Choose the execution limit
+
+`"max_execution_secs": 300` keeps the existing five-minute maximum. An
+administrator can set it from 1 to 86,400 seconds, then restart the broker; for
+example, `3600` allows requests up to one hour. Omitted values remain 300.
+Restart cancels pending requests, so changed policy applies to fresh reviews.
+
+Each request supplies `timeout_secs` (default 300), bounded by this maximum.
+The broker rejects an excessive duration rather than silently shortening it,
+and checks the limit again before consuming an approval. The exact duration is
+signed and shown under execution details, not in the header. Changing it needs
+a new request and approval. Approval expiry still controls when approval can be
+given; it does not shorten an already approved command's runtime.
+
+Update the broker and adapter together before using limits above five minutes;
+older adapters reject those requests. The separate native receipt fixture still
+uses a fixed 30-second example and executes nothing. Longer-duration authorization
+has automated coverage; a real hour-long process and its cleanup have not been
+tested as part of this change.
 
 ## Pair an approving host
 
@@ -56,13 +81,31 @@ On the trusted host, run `npm run keygen -- /private/path/approver.pem` from `ui
 sudo /usr/local/libexec/sudo-relay/broker pair /etc/sudo-relay/config.json desktop PUBLIC_KEY_HEX
 ```
 
+For a future protected native signer, the broker also accepts
+`pair-p256 CONFIG KEY_ID UNCOMPRESSED_SEC1_PUBLIC_KEY_HEX`. This is an explicit
+administrator operation, validates the public point, and refuses to overwrite an
+existing key ID. It expects the 65-byte public representation, not a private key
+or PEM file. The command adds verification support; it does not install a working
+Touch ID adapter or attest that a key is hardware-protected. Do not pair the
+published interoperability fixture key for real use.
+
 Pin the machine UUID in the host adapter. Pairing a host is an administrative trust decision. Public keys are re-read on every approval so revocation takes effect without restarting:
 
 ```sh
 sudo /usr/local/libexec/sudo-relay/broker revoke /etc/sudo-relay/config.json desktop
 ```
 
-Revocation cannot undo a command already consumed or launched. Generate a new host key and pair a new key ID to rotate keys.
+Pairing and revocation cancel all pending requests in that broker, because a
+pending request has not selected an approving key yet. Re-pairing the same key
+requires a fresh request. Revocation records denial in the ledger before deleting
+the key file; retrying revocation is safe if cleanup was interrupted. If pairing
+was interrupted and its file remains, explicitly revoke that ID and pair again.
+Do not copy public-key files manually to recover enrollment.
+
+Revocation cannot undo a command already consumed or launched. Generate a new host
+key and pair a new key ID to rotate keys. Stop older broker processes before
+upgrading the broker and administrator CLI together; older binaries do not enforce
+the new ledger denial markers.
 
 ## Start the service
 

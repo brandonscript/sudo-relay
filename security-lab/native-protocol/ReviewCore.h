@@ -1,0 +1,31 @@
+#include <stddef.h>
+#include <stdint.h>
+
+// Root-controlled regular file, at most 4096 bytes; errors leave output unchanged.
+// Returns byte count, -1 invalid/unprotected input, -2 insufficient capacity.
+intptr_t sudo_relay_read_peer_policy(const uint8_t *path, size_t path_len,
+    uint8_t *output, size_t capacity);
+
+// JSON {enrollment,id}, <=4096 bytes; enrollment must be a root-protected receipt-lab record.
+// Fetch only: authenticates root peer and validates frozen request. Never submits approval.
+// Returns {enrollment,review} JSON byte count, -1 failure, -2 insufficient capacity; errors write nothing.
+intptr_t sudo_relay_fetch_review(const uint8_t *input, size_t input_len,
+    uint8_t *output, size_t capacity);
+
+// Returns byte count, -1 invalid input, -2 insufficient capacity; errors write nothing.
+// Caller owns all buffers. Authenticate the request source before calling.
+intptr_t sudo_relay_prepare_review(const uint8_t *input, size_t input_len,
+    const uint8_t *machine, size_t machine_len, uint64_t now,
+    uint8_t *output, size_t capacity);
+
+// JSON {enrollment,id,signature,share_output}, <=4096 bytes. Receipt-only submission.
+// Returns 1 only for verified consumption, -1 otherwise (outcome may be unknown). Never retry automatically.
+int32_t sudo_relay_submit_receipt(const uint8_t *input, size_t input_len);
+
+// JSON {enrollment,id}, <=4096 bytes. Cancel a protected pending receipt only.
+// Returns 1 for matching cancellation acknowledgement, -1 otherwise. No retries.
+int32_t sudo_relay_cancel_receipt(const uint8_t *input, size_t input_len);
+
+// Explicit disposable-Linux execution build only. Never accepts receipt enrollment.
+intptr_t sudo_relay_execution_review(const uint8_t *input, size_t input_len,
+    uint8_t *output, size_t capacity);

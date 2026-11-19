@@ -5,15 +5,42 @@ edition = "2021"
 license = "MIT"
 publish = false
 
+[lib]
+crate-type = ["rlib", "staticlib"]
+
+[features]
+host-probe = []
+native-receipt-lab = []
+integrated-sudo-lab = []
+vm-sudo-lab = ["integrated-sudo-lab"]
+developer-preview = ["integrated-sudo-lab"]
+native-execution-lab = []
+
+[[bin]]
+name = "protected-receipt-lab"
+path = "security-lab/native-install/controller.rs"
+required-features = ["native-receipt-lab"]
+
+[[bin]]
+name = "receipt-verifier"
+path = "security-lab/native-protocol/verifier.rs"
+required-features = ["native-receipt-lab"]
+
+[[bin]]
+name = "mcp-host-probe"
+path = "security-lab/mcp-host-probe/server.rs"
+required-features = ["host-probe"]
+
 [dependencies]
 anyhow = "1"
 ciborium = "0.2"
 ed25519-dalek = "2"
 hex = "0.4"
 libc = "0.2"
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "std"] }
 rand = "0.8"
-rmcp = { version = "0.15", features = ["transport-io"] }
-rusqlite = { version = "0.38", features = ["bundled"] }
+rmcp = { version = "3.9", features = ["transport-io"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -23,3 +50,18 @@ uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3"
+
+[[bin]]
+name = "integrated-sudo-lab"
+path = "security-lab/integrated-sudo/controller.rs"
+required-features = ["integrated-sudo-lab"]
+
+[[bin]]
+name = "execution-review-check"
+path = "security-lab/native-execution/bridge-check.rs"
+required-features = ["native-execution-lab"]
+
+[[bin]]
+name = "sudo-relay-preview"
+path = "preview/broker.rs"
+required-features = ["developer-preview"]

@@ -6,7 +6,8 @@ use std::{
     path::{Path, PathBuf},
 };
 use sudo_relay::{
-    broker::{protected_path, Config},
+    broker::{protected_path, read_protected_file, Broker, Config},
+    protocol::MAX_REQUEST_BYTES,
     transport,
 };
 
@@ -14,17 +15,20 @@ const HELP: &str = "sudo-relay broker (experimental)
 
 broker [--development] init CONFIG STATE_DIR SOCKET AGENT_UID APPROVER_UID SOCKET_GID
 broker [--development] serve CONFIG
-broker [--development] pair CONFIG KEY_ID PUBLIC_KEY_HEX
+broker [--development] pair CONFIG KEY_ID ED25519_PUBLIC_KEY_HEX
+broker [--development] pair-p256 CONFIG KEY_ID UNCOMPRESSED_SEC1_PUBLIC_KEY_HEX
 broker [--development] revoke CONFIG KEY_ID
 
 Production commands require root. --development requires non-root and never elevates.
 init refuses existing configuration; serve never runs sudo or reads passwords.
 ";
 fn load(path: &Path, development: bool) -> Result<Config> {
-    if !development {
-        protected_path(path, 0)?;
-    }
-    let config: Config = serde_json::from_slice(&fs::read(path)?)?;
+    let bytes = if development {
+        fs::read(path)?
+    } else {
+        read_protected_file(path, MAX_REQUEST_BYTES)?
+    };
+    let config: Config = serde_json::from_slice(&bytes)?;
     config.validate(development)?;
     Ok(config)
 }
@@ -55,6 +59,7 @@ fn main() -> Result<()> {
                 approver_uid: args[5].parse()?,
                 socket_gid: args[6].parse()?,
                 approval_ttl_secs: 300,
+                max_execution_secs: 300,
             };
             config.validate(development)?;
             for (dir, mode) in [
@@ -93,50 +98,23 @@ fn main() -> Result<()> {
         Some("serve") if args.len() == 2 => {
             transport::serve(load(Path::new(&args[1]), development)?, development)?
         }
-        Some("pair") if args.len() == 4 => {
+        Some("pair" | "pair-p256") if args.len() == 4 => {
             let config = load(Path::new(&args[1]), development)?;
-            validate_key_id(&args[2])?;
-            let bytes: [u8; 32] = hex::decode(&args[3])?
-                .try_into()
-                .map_err(|_| anyhow::anyhow!("expected a 32-byte public key"))?;
-            ed25519_dalek::VerifyingKey::from_bytes(&bytes)?;
-            let keys = config.state_dir.join("keys");
-            if !development {
-                protected_path(&keys, 0)?;
-            }
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .open(keys.join(format!("{}.pub", args[2])))?;
-            file.write_all(hex::encode(bytes).as_bytes())?;
-            file.sync_all()?;
-            fs::File::open(keys)?.sync_all()?;
+            let encoded = if args[0] == "pair-p256" {
+                format!("p256-sha256:{}", args[3].to_ascii_lowercase())
+            } else {
+                ensure!(args[3].len() == 64, "expected a 32-byte Ed25519 public key");
+                args[3].to_ascii_lowercase()
+            };
+            Broker::pair_key(&config, development, &args[2], &encoded)?;
             println!("Approver paired: {}", args[2]);
         }
         Some("revoke") if args.len() == 3 => {
             let config = load(Path::new(&args[1]), development)?;
-            validate_key_id(&args[2])?;
-            let keys = config.state_dir.join("keys");
-            if !development {
-                protected_path(&keys, 0)?;
-            }
-            fs::remove_file(keys.join(format!("{}.pub", args[2])))?;
-            fs::File::open(keys)?.sync_all()?;
+            Broker::revoke_key(&config, development, &args[2])?;
             println!("Approver revoked: {}", args[2]);
         }
         _ => bail!("invalid arguments; use --help"),
     }
-    Ok(())
-}
-fn validate_key_id(id: &str) -> Result<()> {
-    ensure!(
-        !id.is_empty()
-            && id.len() <= 64
-            && id
-                .bytes()
-                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'),
-        "key id must contain 1..64 letters, digits, hyphens or underscores"
-    );
     Ok(())
 }

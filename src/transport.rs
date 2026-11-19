@@ -19,7 +19,25 @@ use std::{
 };
 
 pub fn call(socket: &Path, request: &Request) -> Result<serde_json::Value> {
-    let mut stream = UnixStream::connect(socket).context("broker unavailable")?;
+    exchange(
+        UnixStream::connect(socket).context("broker unavailable")?,
+        request,
+    )
+}
+/// Authenticate the root-owned socket before sending a review reference or proof.
+pub fn call_protected(socket: &Path, request: &Request) -> Result<serde_json::Value> {
+    use std::os::unix::fs::FileTypeExt;
+    crate::broker::protected_path(socket.parent().context("socket has no parent")?, 0)?;
+    let metadata = fs::symlink_metadata(socket)?;
+    ensure!(
+        metadata.file_type().is_socket() && metadata.uid() == 0,
+        "expected a root-owned socket"
+    );
+    let stream = UnixStream::connect(socket).context("broker unavailable")?;
+    ensure!(peer_uid(&stream)? == 0, "broker peer must be root");
+    exchange(stream, request)
+}
+fn exchange(mut stream: UnixStream, request: &Request) -> Result<serde_json::Value> {
     stream.set_read_timeout(Some(Duration::from_secs(10)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     serde_json::to_writer(&mut stream, request)?;
@@ -93,6 +111,104 @@ fn peer_uid(stream: &UnixStream) -> Result<u32> {
     Ok(uid)
 }
 pub fn serve(config: Config, development: bool) -> Result<()> {
+    serve_mode(config, development, Dispatch::Execute)
+}
+#[cfg(feature = "native-receipt-lab")]
+pub fn serve_receipts(config: Config, development: bool) -> Result<()> {
+    serve_mode(
+        config,
+        development,
+        Dispatch::ReceiptOnly { lose_ack: false },
+    )
+}
+/// Receipt-lab fault injection only: commit approval, then close without replying.
+#[cfg(feature = "native-receipt-lab")]
+pub fn serve_receipts_losing_ack(config: Config, development: bool) -> Result<()> {
+    serve_mode(
+        config,
+        development,
+        Dispatch::ReceiptOnly { lose_ack: true },
+    )
+}
+/// Lab adapter only; never selected by a client request or production configuration.
+#[cfg(feature = "integrated-sudo-lab")]
+pub trait SudoLabExecutor: Send + Sync {
+    fn check(&self, spec: &crate::protocol::Spec) -> Result<()>;
+    fn execute(&self, job: crate::broker::Job) -> execution::Outcome;
+}
+/// Explicit lab opt-in, never enabled by production configuration or an MCP request.
+#[cfg(feature = "integrated-sudo-lab")]
+pub fn ensure_sudo_lab_environment() -> Result<()> {
+    ensure!(cfg!(target_os = "linux"), "Linux lab required");
+    if Path::new("/.dockerenv").exists() {
+        return Ok(());
+    }
+    #[cfg(feature = "vm-sudo-lab")]
+    {
+        let marker =
+            crate::broker::read_protected_file(Path::new("/etc/sudo-relay-vm-lab-id"), 128)?;
+        ensure!(
+            marker == std::fs::read("/etc/machine-id")?,
+            "VM lab identity mismatch"
+        );
+        ensure!(
+            std::process::Command::new("/usr/bin/systemd-detect-virt")
+                .arg("--vm")
+                .stdout(std::process::Stdio::null())
+                .status()?
+                .success(),
+            "VM required"
+        );
+        Ok(())
+    }
+    #[cfg(not(feature = "vm-sudo-lab"))]
+    anyhow::bail!("disposable container only")
+}
+#[cfg(feature = "integrated-sudo-lab")]
+pub fn serve_sudo_lab(config: Config, executor: Arc<dyn SudoLabExecutor>) -> Result<()> {
+    ensure_sudo_lab_environment()?;
+    serve_mode(config, false, Dispatch::SudoLab(executor))
+}
+/// Fixed-command preview entry point; never selected by a production client request.
+#[cfg(feature = "developer-preview")]
+pub fn serve_sudo_preview(config: Config, executor: Arc<dyn SudoLabExecutor>) -> Result<()> {
+    ensure!(
+        cfg!(target_os = "linux") && unsafe { libc::geteuid() } == 0,
+        "root Linux preview only"
+    );
+    serve_mode(config, false, Dispatch::SudoLab(executor))
+}
+#[derive(Clone)]
+enum Dispatch {
+    #[cfg(feature = "integrated-sudo-lab")]
+    SudoLab(Arc<dyn SudoLabExecutor>),
+    Execute,
+    #[cfg(feature = "native-receipt-lab")]
+    ReceiptOnly {
+        lose_ack: bool,
+    },
+}
+impl Dispatch {
+    fn handle(
+        &self,
+        broker: &mut Broker,
+        request: Request,
+        uid: u32,
+    ) -> Result<(Reply, Option<crate::broker::Job>)> {
+        #[cfg(feature = "native-receipt-lab")]
+        if matches!(self, Self::ReceiptOnly { .. })
+            && matches!(request, Request::ApproveReceipt { .. })
+        {
+            return broker.handle_receipt_current(request, uid);
+        }
+        #[cfg(feature = "integrated-sudo-lab")]
+        if let (Self::SudoLab(executor), Request::RequestExecution { spec }) = (self, &request) {
+            executor.check(spec)?;
+        }
+        broker.handle_current(request, uid)
+    }
+}
+fn serve_mode(config: Config, development: bool, dispatch: Dispatch) -> Result<()> {
     let broker = Broker::open(config.clone(), development)?;
     let parent = config.socket.parent().context("socket has no parent")?;
     if !development {
@@ -128,8 +244,12 @@ pub fn serve(config: Config, development: bool) -> Result<()> {
     fs::set_permissions(&config.socket, fs::Permissions::from_mode(0o660))?;
     // No execution occurs while opening the state store. Startup recovery is committed first.
     let shared = Arc::new(Mutex::new(broker));
+    #[cfg(feature = "native-receipt-lab")]
+    let mut receipt_attempts = 0u64;
     for stream in listener.incoming() {
         let mut stream = stream?;
+        #[cfg(feature = "native-receipt-lab")]
+        let mut fault_request = false;
         // Requests are bounded and handled serially, so connections cannot create unbounded threads.
         let result = (|| -> Result<_> {
             stream.set_write_timeout(Some(Duration::from_secs(2)))?;
@@ -139,18 +259,65 @@ pub fn serve(config: Config, development: bool) -> Result<()> {
                 "peer not authorized"
             );
             let bytes = read_line(&mut stream, MAX_REQUEST_BYTES, Duration::from_secs(2))?;
-            let request = serde_json::from_slice(&bytes)?;
-            shared
+            let request: Request = serde_json::from_slice(&bytes)?;
+            #[cfg(feature = "native-receipt-lab")]
+            if matches!(dispatch, Dispatch::ReceiptOnly { lose_ack: true })
+                && uid == config.approver_uid
+                && matches!(request, Request::ApproveReceipt { .. })
+            {
+                fault_request = true;
+                receipt_attempts += 1;
+                fs::write(
+                    config.state_dir.join("ack-loss.json"),
+                    serde_json::to_vec(
+                        &serde_json::json!({"attempts":receipt_attempts,"dropped":false}),
+                    )?,
+                )?;
+            }
+            let mut broker = shared
                 .lock()
-                .map_err(|_| anyhow::anyhow!("broker state poisoned"))?
-                .handle(request, uid, crate::broker::now())
+                .map_err(|_| anyhow::anyhow!("broker state poisoned"))?;
+            dispatch.handle(&mut broker, request, uid)
         })();
         let (reply, job) = match result {
             Ok(v) => v,
             Err(e) => (Reply::error(format!("{e:#}")), None),
         };
+        let (reply, job) = match &dispatch {
+            Dispatch::Execute => (reply, job),
+            #[cfg(feature = "integrated-sudo-lab")]
+            Dispatch::SudoLab(_) => (reply, job),
+            #[cfg(feature = "native-receipt-lab")]
+            Dispatch::ReceiptOnly { .. } => {
+                let mut reply = reply;
+                if let Reply::Ok { value, .. } = &mut reply {
+                    if let Some(value) = value.as_object_mut() {
+                        value.insert("receipt_only".into(), true.into());
+                    }
+                }
+                drop(job);
+                (reply, None)
+            }
+        };
+        #[cfg(feature = "native-receipt-lab")]
+        if fault_request {
+            if let Reply::Ok { value, .. } = &reply {
+                if value["state"] == "consumed" && value["receipt_only"] == true {
+                    // The transaction has committed. This marker is diagnostic, not approval authority.
+                    fs::write(
+                        config.state_dir.join("ack-loss.json"),
+                        serde_json::to_vec(
+                            &serde_json::json!({"attempts":receipt_attempts,"dropped":true,"id":value["id"]}),
+                        )?,
+                    )?;
+                    continue;
+                }
+            }
+        }
         if let Some(job) = job {
             let state = Arc::clone(&shared);
+            #[cfg(feature = "integrated-sudo-lab")]
+            let executor = dispatch.clone();
             thread::spawn(move || {
                 let id = job.envelope.id.clone();
                 let details = state
@@ -162,6 +329,12 @@ pub fn serve(config: Config, development: bool) -> Result<()> {
                     });
                 match details {
                     Ok((dir, dev)) => {
+                        #[cfg(feature = "integrated-sudo-lab")]
+                        let outcome = match executor {
+                            Dispatch::SudoLab(executor) => executor.execute(job),
+                            _ => execution::execute(&job.envelope, &dir, dev, job.share_output),
+                        };
+                        #[cfg(not(feature = "integrated-sudo-lab"))]
                         let outcome =
                             execution::execute(&job.envelope, &dir, dev, job.share_output);
                         if let Ok(mut broker) = state.lock() {
@@ -184,6 +357,25 @@ pub fn serve(config: Config, development: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn protected_call_rejects_user_socket_before_connecting() {
+        assert_ne!(unsafe { libc::geteuid() }, 0);
+        let dir = tempfile::tempdir().unwrap();
+        let socket = dir.path().join("untrusted.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        assert!(call_protected(
+            &socket,
+            &Request::ExecutionStatus {
+                id: "test-reference".into()
+            }
+        )
+        .is_err());
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
     #[test]
     fn buffered_reply_survives_peer_disconnect() {
         let (mut read, mut write) = UnixStream::pair().unwrap();

@@ -34,6 +34,7 @@ impl Setup {
                 approver_uid: uid,
                 socket_gid: unsafe { libc::getegid() },
                 approval_ttl_secs: 300,
+                max_execution_secs: 300,
                 state_dir: dir.path().into(),
                 socket: dir.path().join("socket-dir/socket"),
             },
@@ -97,6 +98,51 @@ fn state(broker: &mut Broker, id: &str, uid: u32, time: u64) -> String {
         .into()
 }
 #[test]
+fn receipt_method_cannot_consume_through_the_execution_broker() {
+    let setup = Setup::new();
+    let mut broker = setup.broker();
+    let envelope = setup.request(&mut broker);
+    let mut receipt = serde_json::to_value(setup.approval(&envelope)).unwrap();
+    receipt["method"] = "approve_receipt".into();
+    assert!(broker
+        .handle(
+            serde_json::from_value(receipt).unwrap(),
+            setup.config.approver_uid,
+            101
+        )
+        .is_err());
+    let receipt_signature = setup
+        .key
+        .sign(&envelope.receipt_approval_payload(true).unwrap());
+    let mut substituted = serde_json::to_value(setup.approval(&envelope)).unwrap();
+    substituted["signature"] = hex::encode(receipt_signature.to_bytes()).into();
+    assert!(broker
+        .handle(
+            serde_json::from_value(substituted).unwrap(),
+            setup.config.approver_uid,
+            101
+        )
+        .is_err());
+    let (status, job) = broker
+        .handle(
+            Request::ExecutionStatus {
+                id: envelope.id.clone(),
+            },
+            setup.config.agent_uid,
+            101,
+        )
+        .unwrap();
+    assert!(job.is_none());
+    assert_eq!(status.value().unwrap()["state"], "pending");
+    // Positive control confirms the rejected receipt contained a valid proof. Never execute its Job.
+    let (_, job) = broker
+        .handle(setup.approval(&envelope), setup.config.approver_uid, 101)
+        .unwrap();
+    assert!(job.is_some());
+    drop(job);
+}
+
+#[test]
 fn request_never_executes_and_replay_never_launches_twice() {
     let s = Setup::new();
     let mut b = s.broker();
@@ -148,6 +194,50 @@ fn forged_wrong_key_changed_command_and_cross_machine_approvals_fail() {
     assert!(b.handle(req, s.config.agent_uid, 101).is_err());
     assert_eq!(state(&mut b, &env.id, s.config.agent_uid, 101), "pending");
 }
+
+#[test]
+fn approval_before_creation_rejects_without_consuming_the_request() {
+    let s = Setup::new();
+    let mut broker = s.broker();
+    let env = s.request(&mut broker);
+    assert!(broker
+        .handle(s.approval(&env), s.config.agent_uid, env.created_at - 1)
+        .is_err());
+    assert_eq!(
+        state(&mut broker, &env.id, s.config.agent_uid, env.created_at),
+        "pending"
+    );
+    let (_, job) = broker
+        .handle(s.approval(&env), s.config.agent_uid, env.created_at)
+        .unwrap();
+    assert!(job.is_some());
+    drop(job); // Authorization only: never invoke the executor.
+    assert!(broker
+        .handle(s.approval(&env), s.config.agent_uid, env.created_at + 1)
+        .is_err());
+}
+
+#[test]
+fn observed_expiry_stays_terminal_after_clock_rollback_and_restart() {
+    let s = Setup::new();
+    let mut broker = s.broker();
+    let env = s.request(&mut broker);
+    assert!(broker
+        .handle(s.approval(&env), s.config.agent_uid, env.expires_at)
+        .is_err());
+    assert!(broker
+        .handle(s.approval(&env), s.config.agent_uid, env.created_at + 1)
+        .is_err());
+    drop(broker);
+    let mut broker = s.broker();
+    assert_eq!(
+        state(&mut broker, &env.id, s.config.agent_uid, env.created_at),
+        "expired"
+    );
+    assert!(broker
+        .handle(s.approval(&env), s.config.agent_uid, env.created_at + 1)
+        .is_err());
+}
 #[test]
 fn expiry_cancellation_and_revocation_deny_execution() {
     for mode in ["expired", "cancelled", "revoked"] {
@@ -170,6 +260,76 @@ fn expiry_cancellation_and_revocation_deny_execution() {
             .handle(s.approval(&env), s.config.agent_uid, time)
             .is_err());
     }
+}
+#[test]
+fn four_hosts_isolate_colliding_requests_and_key_revocation() {
+    let setups: Vec<_> = (0..4).map(|_| Setup::new()).collect();
+    let mut brokers: Vec<_> = setups.iter().map(Setup::broker).collect();
+    let common = Envelope::new(&setups[0].config.machine_id, spec(), 100, 300).unwrap();
+    let envelopes: Vec<_> = setups
+        .iter()
+        .map(|setup| {
+            let mut envelope = common.clone();
+            envelope.machine_id = setup.config.machine_id.clone();
+            // Controller-created collision: only machine identity differs, not ID, nonce or command.
+            let db = rusqlite::Connection::open(setup.dir.path().join("state.sqlite3")).unwrap();
+            db.execute(
+                "INSERT INTO requests(id,envelope,state) VALUES(?1,?2,'pending')",
+                rusqlite::params![envelope.id, serde_json::to_string(&envelope).unwrap()],
+            )
+            .unwrap();
+            envelope
+        })
+        .collect();
+    for (source, setup) in setups.iter().enumerate() {
+        for (target, broker) in brokers.iter_mut().enumerate() {
+            if source == target {
+                continue;
+            }
+            let error = broker
+                .handle(
+                    setup.approval(&envelopes[source]),
+                    setup.config.approver_uid,
+                    101,
+                )
+                .err()
+                .expect("another host's signature must be rejected");
+            assert!(error.to_string().contains("invalid approval signature"));
+            assert_eq!(
+                state(broker, &common.id, setup.config.agent_uid, 101),
+                "pending"
+            );
+        }
+    }
+    fs::remove_file(setups[0].dir.path().join("keys/test.pub")).unwrap();
+    assert!(brokers[0]
+        .handle(
+            setups[0].approval(&envelopes[0]),
+            setups[0].config.approver_uid,
+            102
+        )
+        .is_err());
+    for index in 1..4 {
+        let setup = &setups[index];
+        let envelope = &envelopes[index];
+        let broker = &mut brokers[index];
+        let (_, job) = broker
+            .handle(setup.approval(envelope), setup.config.approver_uid, 102)
+            .unwrap();
+        // Inspect authorization only; never call the executor or start a transport listener.
+        assert_eq!(job.unwrap().envelope.machine_id, setup.config.machine_id);
+        assert_eq!(
+            state(broker, &common.id, setup.config.agent_uid, 102),
+            "consumed"
+        );
+        assert!(broker
+            .handle(setup.approval(envelope), setup.config.approver_uid, 103)
+            .is_err());
+    }
+    assert_eq!(
+        state(&mut brokers[0], &common.id, setups[0].config.agent_uid, 103),
+        "pending"
+    );
 }
 #[test]
 fn three_signed_wrong_number_attempts_cancel() {
@@ -612,4 +772,310 @@ fn old_ledger_gets_withholding_default() {
         .value()
         .unwrap();
     assert_eq!(status["output_shared"], false);
+}
+
+#[test]
+fn execution_limit_is_admin_bounded_signed_and_independent_of_approval_expiry() {
+    for maximum in [1, 300, 3600, 86_400] {
+        let mut setup = Setup::new();
+        setup.config.max_execution_secs = maximum;
+        let mut broker = setup.broker();
+        let mut request = spec();
+        request.timeout_secs = maximum + 1;
+        assert!(broker
+            .handle(
+                Request::RequestExecution {
+                    spec: request.clone()
+                },
+                setup.config.agent_uid,
+                100
+            )
+            .is_err());
+        request.timeout_secs = maximum;
+        let (reply, job) = broker
+            .handle(
+                Request::RequestExecution { spec: request },
+                setup.config.agent_uid,
+                100,
+            )
+            .unwrap();
+        assert!(job.is_none());
+        let envelope = serde_json::from_value::<PendingView>(reply.value().unwrap())
+            .unwrap()
+            .envelope;
+        assert_eq!(envelope.spec.timeout_secs, maximum);
+        assert_eq!(envelope.expires_at, 400);
+        let mut changed = envelope.clone();
+        changed.spec.timeout_secs += 1;
+        assert!(broker
+            .handle(setup.approval(&changed), setup.config.approver_uid, 101)
+            .is_err());
+        if maximum > 1 {
+            broker.config.max_execution_secs = maximum - 1;
+            assert!(broker
+                .handle(setup.approval(&envelope), setup.config.approver_uid, 101)
+                .is_err());
+            assert_eq!(
+                state(&mut broker, &envelope.id, setup.config.agent_uid, 101),
+                "pending"
+            );
+            broker.config.max_execution_secs = maximum;
+        }
+        let (_, job) = broker
+            .handle(setup.approval(&envelope), setup.config.approver_uid, 101)
+            .unwrap();
+        // Inspect the frozen limit without invoking the executor.
+        assert_eq!(job.unwrap().envelope.spec.timeout_secs, maximum);
+    }
+}
+
+#[test]
+fn execution_limit_configuration_preserves_old_defaults_and_rejects_unbounded_values() {
+    let setup = Setup::new();
+    let mut value = serde_json::to_value(&setup.config).unwrap();
+    value.as_object_mut().unwrap().remove("max_execution_secs");
+    let mut config: Config = serde_json::from_value(value).unwrap();
+    assert_eq!(config.max_execution_secs, 300);
+    config.validate(true).unwrap();
+    for maximum in [0, 86_401, u64::MAX] {
+        config.max_execution_secs = maximum;
+        assert!(config.validate(true).is_err());
+    }
+}
+
+#[test]
+fn cryptokit_p256_vectors_verify_exact_cbor_and_reject_alteration() {
+    use sudo_relay::approval_key::ApprovalKey;
+    let vector: serde_json::Value =
+        serde_json::from_str(include_str!("../ui/test/p256-fixture.json")).unwrap();
+    let fixture: PendingView =
+        serde_json::from_str(include_str!("../ui/test/fixture.json")).unwrap();
+    let public = vector["public_key_sec1"].as_str().unwrap();
+    let key = ApprovalKey::parse(&format!("p256-sha256:{public}")).unwrap();
+    for (share, suffix) in [(true, "shared"), (false, "withheld")] {
+        let bytes = fixture.envelope.approval_payload(share).unwrap();
+        assert_eq!(hex::encode(&bytes), vector[format!("payload_{suffix}")]);
+        let signature =
+            hex::decode(vector[format!("signature_der_{suffix}")].as_str().unwrap()).unwrap();
+        key.verify(&bytes, &signature).unwrap();
+        assert!(key
+            .verify(
+                &fixture.envelope.approval_payload(!share).unwrap(),
+                &signature
+            )
+            .is_err());
+        let mut trailing = signature.clone();
+        trailing.push(0);
+        assert!(key.verify(&bytes, &trailing).is_err());
+        assert!(key
+            .verify(&bytes, &signature[..signature.len() - 1])
+            .is_err());
+        assert!(key.verify(&bytes, &[0; 64]).is_err());
+        assert!(key.verify(&bytes, &[0; 73]).is_err());
+        let ed =
+            ApprovalKey::parse(&hex::encode(Setup::new().key.verifying_key().to_bytes())).unwrap();
+        assert!(ed.verify(&bytes, &signature).is_err());
+    }
+    for invalid in [
+        format!("p256-sha256:04{}", "00".repeat(64)),
+        format!("p256-sha256:{}", "02".repeat(33)),
+        format!("unknown:{public}"),
+        public.to_owned(),
+    ] {
+        assert!(ApprovalKey::parse(&invalid).is_err());
+    }
+}
+
+#[test]
+fn p256_approval_binds_output_command_key_and_consumption_without_execution() {
+    use p256::ecdsa::{signature::Signer as _, Signature, SigningKey as P256Key};
+    let setup = Setup::new();
+    let key = P256Key::from_slice(&[11; 32]).unwrap();
+    fs::write(
+        setup.dir.path().join("keys/test.pub"),
+        format!(
+            "p256-sha256:{}",
+            hex::encode(key.verifying_key().to_sec1_point(false))
+        ),
+    )
+    .unwrap();
+    let mut broker = setup.broker();
+    let envelope = setup.request(&mut broker);
+    assert!(broker
+        .handle(setup.approval(&envelope), setup.config.approver_uid, 101)
+        .is_err());
+    let approve = |request: &Envelope, signer: &P256Key| {
+        let signature: Signature = signer.sign(&request.approval_payload(false).unwrap());
+        Request::Approve {
+            id: request.id.clone(),
+            key_id: "test".into(),
+            number: request.number.clone(),
+            share_output: false,
+            signature: hex::encode(signature.to_der()),
+        }
+    };
+    let mut changed = envelope.clone();
+    changed.spec.reason.push('!');
+    assert!(broker
+        .handle(approve(&changed, &key), setup.config.approver_uid, 101)
+        .is_err());
+    assert!(broker
+        .handle(
+            approve(&envelope, &P256Key::from_slice(&[12; 32]).unwrap()),
+            setup.config.approver_uid,
+            101
+        )
+        .is_err());
+    let mut changed_output = approve(&envelope, &key);
+    if let Request::Approve { share_output, .. } = &mut changed_output {
+        *share_output = true;
+    }
+    assert!(broker
+        .handle(changed_output, setup.config.approver_uid, 101)
+        .is_err());
+    let (_, job) = broker
+        .handle(approve(&envelope, &key), setup.config.approver_uid, 101)
+        .unwrap();
+    assert!(!job.unwrap().share_output);
+    assert!(broker
+        .handle(approve(&envelope, &key), setup.config.approver_uid, 102)
+        .is_err());
+}
+
+#[test]
+fn p256_pairing_is_explicit_validated_and_non_overwriting() {
+    use std::process::Command as Process;
+    let setup = Setup::new();
+    let config = setup.dir.path().join("config.json");
+    fs::write(&config, serde_json::to_vec(&setup.config).unwrap()).unwrap();
+    let vector: serde_json::Value =
+        serde_json::from_str(include_str!("../ui/test/p256-fixture.json")).unwrap();
+    let public = vector["public_key_sec1"].as_str().unwrap();
+    let pair = |command: &str, id: &str, key: &str| {
+        Process::new(env!("CARGO_BIN_EXE_broker"))
+            .args(["--development", command])
+            .arg(&config)
+            .args([id, key])
+            .output()
+            .unwrap()
+    };
+    assert!(!pair("pair", "native", public).status.success());
+    assert!(!pair("pair-p256", "native", &"00".repeat(65))
+        .status
+        .success());
+    assert!(!setup.dir.path().join("keys/native.pub").exists());
+    assert!(pair("pair-p256", "native", public).status.success());
+    let paired = fs::read_to_string(setup.dir.path().join("keys/native.pub")).unwrap();
+    assert_eq!(paired, format!("p256-sha256:{public}"));
+    assert!(!pair("pair-p256", "native", public).status.success());
+    assert_eq!(
+        fs::read_to_string(setup.dir.path().join("keys/native.pub")).unwrap(),
+        paired
+    );
+}
+
+#[test]
+fn enrollment_revocation_repair_requires_fresh_request() {
+    let setup = Setup::new();
+    let mut broker = setup.broker();
+    let envelope = setup.request(&mut broker);
+    Broker::revoke_key(&setup.config, true, "test").unwrap();
+    assert!(broker
+        .handle(setup.approval(&envelope), setup.config.approver_uid, 101)
+        .is_err());
+    Broker::pair_key(
+        &setup.config,
+        true,
+        "test",
+        &hex::encode(setup.key.verifying_key().to_bytes()),
+    )
+    .unwrap();
+    assert!(broker
+        .handle(setup.approval(&envelope), setup.config.approver_uid, 102)
+        .is_err());
+    let fresh = setup.request(&mut broker);
+    let (_, job) = broker
+        .handle(setup.approval(&fresh), setup.config.approver_uid, 103)
+        .unwrap();
+    assert!(job.is_some());
+    drop(job);
+}
+
+#[test]
+fn enrollment_interrupted_file_cleanup_cannot_restore_revoked_key() {
+    let setup = Setup::new();
+    let mut broker = setup.broker();
+    Broker::revoke_key(&setup.config, true, "test").unwrap();
+    // Recreate the leftover file from a crash after the durable revocation commit.
+    let keyfile = setup.dir.path().join("keys/test.pub");
+    fs::write(&keyfile, hex::encode(setup.key.verifying_key().to_bytes())).unwrap();
+    fs::set_permissions(&keyfile, fs::Permissions::from_mode(0o600)).unwrap();
+    let envelope = setup.request(&mut broker);
+    assert!(broker
+        .handle(setup.approval(&envelope), setup.config.approver_uid, 101)
+        .err()
+        .unwrap()
+        .to_string()
+        .contains("revoked"));
+    drop(broker);
+    let mut broker = setup.broker();
+    let fresh = setup.request(&mut broker);
+    assert!(broker
+        .handle(setup.approval(&fresh), setup.config.approver_uid, 101)
+        .is_err());
+    // Retrying revocation safely cleans up the leftover file; only explicit re-pairing enables a key.
+    Broker::revoke_key(&setup.config, true, "test").unwrap();
+    assert!(!keyfile.exists());
+}
+
+#[test]
+fn enrollment_revocation_and_approval_have_one_commit_order() {
+    for _ in 0..8 {
+        let setup = Setup::new();
+        let mut broker = setup.broker();
+        let envelope = setup.request(&mut broker);
+        let approval = setup.approval(&envelope);
+        let barrier = std::sync::Barrier::new(2);
+        let accepted = std::thread::scope(|scope| {
+            let barrier = &barrier;
+            let uid = setup.config.approver_uid;
+            let approving = scope.spawn(move || {
+                barrier.wait();
+                match broker.handle(approval, uid, 101) {
+                    Ok((_, job)) => {
+                        let accepted = job.is_some();
+                        drop(job);
+                        accepted
+                    }
+                    Err(_) => false,
+                }
+            });
+            barrier.wait();
+            Broker::revoke_key(&setup.config, true, "test").unwrap();
+            approving.join().unwrap()
+        });
+        let db = rusqlite::Connection::open(setup.dir.path().join("state.sqlite3")).unwrap();
+        let revoked: i64 = db
+            .query_row(
+                "SELECT seq FROM audit WHERE event='key_revoked'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let consumed: Option<i64> = db
+            .query_row(
+                "SELECT min(seq) FROM audit WHERE event='consumed'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(accepted, consumed.is_some());
+        if let Some(consumed) = consumed {
+            assert!(consumed < revoked);
+        }
+        let state: String = db
+            .query_row("SELECT state FROM requests", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(state, if accepted { "consumed" } else { "cancelled" });
+    }
 }

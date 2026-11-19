@@ -3,6 +3,50 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  integrated-sudo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -p integrated-sudo-check -f security-lab/integrated-sudo/compose.yaml build
+      - run: docker compose -p integrated-sudo-check -f security-lab/integrated-sudo/compose.yaml run --rm --no-deps -T integration
+      - name: Real MCP and peer-authenticated socket to native sudo
+        run: docker compose -p integrated-sudo-check -f security-lab/integrated-sudo/compose.yaml run --rm --no-deps -T --entrypoint python3 integration -I /integration/test_mcp.py
+      - name: Pinned SSH review channel inside disposable Linux
+        run: docker compose -p integrated-sudo-check -f security-lab/integrated-sudo/compose.yaml run --rm --no-deps -T --entrypoint python3 integration -I /integration/test_ssh.py
+      - name: Validate protected native trial handoff without host privileges
+        run: python3 security-lab/native-execution/test_trial_handoff.py
+      - name: Public-key-only human session and cleanup
+        run: python3 security-lab/native-execution/test_human_session.py
+      - name: Host loopback SSH without container networking
+        run: python3 security-lab/native-execution/check-loopback.py
+      - if: always()
+        run: docker compose -p integrated-sudo-check -f security-lab/integrated-sudo/compose.yaml down --volumes --remove-orphans
+  enrollment-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -p enrollment-check -f security-lab/fixture/compose.yaml build
+      - name: Check enrollment without starting an execution service
+        run: docker compose -p enrollment-check -f security-lab/fixture/compose.yaml run --rm --no-deps -T --entrypoint python sandbox /fixture/test_enrollment.py
+      - if: always()
+        run: docker compose -p enrollment-check -f security-lab/fixture/compose.yaml down --volumes --remove-orphans
+  approval-host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+        working-directory: ui
+      - run: npm ci && npm run check
+        working-directory: security-lab/approval-host
+      - run: npx playwright install --with-deps chromium
+        working-directory: security-lab/approval-host
+      - run: npm test
+        working-directory: security-lab/approval-host
   check:
     strategy:
       fail-fast: false
@@ -18,10 +62,48 @@ jobs:
         with:
           node-version: 24
       - run: cargo fmt --check
-      - run: cargo clippy --locked --all-targets -- -D warnings
-      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - run: cargo test --locked --all-features
+      - name: Preview setup and transport regression checks
+        run: python3 -m unittest discover -s preview -p "test_*.py" -v
+      - name: Check native review protocol bridge without authentication or execution
+        if: runner.os == 'macOS'
+        timeout-minutes: 3
+        run: sh security-lab/native-protocol/check.sh
+      - name: Build protected interactive receipt reviewer without launching it
+        if: runner.os == 'macOS'
+        run: sh security-lab/native-protocol/build-protected-app.sh "$RUNNER_TEMP/protected-native-app"
+      - name: Build isolated Linux execution reviewer without launching or signing
+        if: runner.os == 'macOS'
+        run: sh security-lab/native-execution/build-app.sh "$RUNNER_TEMP/native-execution-app"
+      - name: Check receipt signing-key input boundaries without Keychain access
+        if: runner.os == 'macOS'
+        run: sh security-lab/native-protocol/check-key-store.sh
+      - name: Check unsigned macOS reviewer bundle branding
+        if: runner.os == 'macOS'
+        run: |
+          xcodebuild -project security-lab/native-install/ReceiptLab.xcodeproj -scheme ReceiptLab -configuration Release -derivedDataPath "$RUNNER_TEMP/branding" CODE_SIGNING_ALLOWED=NO build
+          python3 security-lab/native-install/check-branding.py "$RUNNER_TEMP/branding/Build/Products/Release/sudo-relay.app"
+      - name: Check isolated Touch ID experiment without hardware authentication
+        if: runner.os == 'macOS'
+        run: swift test -Xswiftc -warnings-as-errors
+        working-directory: security-lab/touch-id
+      - name: Check receipt-only XPC peer identities
+        if: runner.os == 'macOS'
+        timeout-minutes: 3
+        run: python3 security-lab/xpc-peer/check.py
       - run: npm ci && npm run check && npm test && npm run build
         working-directory: ui
+      - run: cargo build --locked --features host-probe --bin mcp-host-probe
+      - run: python3 security-lab/mcp-host-probe/check.py
+      - run: python3 security-lab/mcp-host-probe/check.py 2025-06-18
+      - run: python3 security-lab/mcp-host-probe/package.py
+      - name: Check four isolated MCP target connections without execution
+        timeout-minutes: 2
+        run: |
+          cargo build --locked --bin mcp-server
+          python3 security-lab/multi-target/check.py
+      - run: node --import ./ui/node_modules/tsx/dist/loader.mjs scripts/integration.mts --boundary-only
       - run: node --import ./ui/node_modules/tsx/dist/loader.mjs scripts/integration.mts
   privileged:
     strategy:
@@ -32,16 +114,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --locked --test privileged --no-run --message-format=json > /tmp/privileged-test-build.json
+      - run: cargo test --locked --features native-receipt-lab --test privileged --no-run --message-format=json > /tmp/privileged-test-build.json
+      - name: Build the headless native reviewer for the disposable account
+        if: runner.os == 'macOS'
+        run: sh security-lab/native-protocol/build-protected-check.sh "$RUNNER_TEMP/native-receipt-check"
       - name: Run only the built root test executable
         run: |
           python3 - <<'PYTEST'
-          import json, subprocess
+          import json, os, subprocess, sys
           executables = []
           for line in open('/tmp/privileged-test-build.json'):
               item = json.loads(line)
               if item.get('executable') and item.get('target', {}).get('name') == 'privileged':
                   executables.append(item['executable'])
           assert len(executables) == 1, executables
-          subprocess.run(['sudo', executables[0], '--ignored', '--test-threads=1'], check=True)
+          command = ['sudo']
+          if sys.platform == 'darwin':
+              command += ['env', 'PE_SWIFT_REVIEW_BINARY=' + os.path.join(os.environ['RUNNER_TEMP'], 'native-receipt-check')]
+          subprocess.run(command + [executables[0], '--ignored', '--test-threads=1'], check=True)
           PYTEST

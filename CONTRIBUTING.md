@@ -31,4 +31,6 @@ For every security change, test the failing case, its allowed counterpart, and r
 
 Run a Ponytail review of the complete flow and a separate documentation pass. Compare naming and README structure to the owner's reference repositories; verify commands rather than merely proofreading them. Record results and untested environments in docs/verification.md.
 
-The public source alpha is for evaluation and must retain the README security status and private reporting link. Before distributing release artifacts: complete name and trademark checks, verify at least one real trusted chat-host integration including mobile, and arrange independent security review. After those prerequisites, add a reviewed `RELEASE_READY` marker and configure the protected `release` environment. The included release workflow then creates signed draft artifacts; a person reviews and publishes the draft. No registry packages publish automatically.
+For a source release, verify the exact commit with CI, review the archive for credentials and local artifacts, and retain the README disclaimer, coverage limits, and private security reporting link. Keep the release marked as a prerelease while setup and security gaps remain open. Test the published download command after the assets are available.
+
+Signed binary distribution needs a separate release review, including signing provenance, name and trademark checks, platform coverage, and independent security review. The source candidate does not include an automated signed-binary release workflow.

@@ -62,3 +62,21 @@ The [independent launch gate](https://github.com/brandonscript/sudo-relay/tree/7
 Fifteen local tests passed, including four new gate tests covering passwordless-rule bypass, missing/forged/expired/altered grants, consumption before release, lost-child reuse, unsafe launcher flags and nonzero timestamp caching. The new native-sudo Docker job also passed on the [GitHub Linux runner](https://github.com/brandonscript/sudo-relay/actions/runs/42773128688). The original two characterization tests intentionally bypass the controller gate to preserve the failing design's behavior. This is a prototype correction, not a production broker integration.
 
 For the next design session: authenticated installer provenance and per-sudoer enrollment; integration of this gate with the real broker's CBOR approvals, scripts, audit and output sharing; and the protected chat signing host. Those three items remain open. No host authentication configuration was changed.
+
+The [November 10 chat approval research and design](chat-approval-design.md) proposes an unprivileged passkey experiment first, documents the potential separate-page requirement, and lists unrun host acceptance tests. It does not resolve these blockers.
+
+## Native review work in progress
+
+The [receipt-only native review lab](native-review-boundary.md) now authenticates the request before rendering, freezes the complete output-sharing decision before signing, and checks that decision against a separately retained request and key before one-use consumption. Ten native protocol/UI tests passed with disposable software keys. The participant screenshot and process output also confirmed one native Touch ID receipt with replay rejected. This does not close blocker 3: protected installation, key enrollment, process/IPC isolation and real host integration remain open; the trial has no execution path.
+
+## November 11: disposable broker-to-sudo integration
+
+The [bounded Linux integration](integrated-sudo-milestone.md) now connects this
+branch's actual broker CBOR verification and consumption to native sudo through
+a container-only adapter. Two sudo-enrolled accounts, revocation, native command
+restrictions, replay/alteration, NOPASSWD, real cached authentication, expiry and
+crashes are exercised together. This is progress beyond the original separate
+prototype; it does not switch the normal MCP service to that adapter. Production
+installer provenance, host authentication coexistence and macOS execution remain
+open. See the new report for exact evidence and exclusions rather than treating
+the historical blockers above as either all resolved or all untouched.

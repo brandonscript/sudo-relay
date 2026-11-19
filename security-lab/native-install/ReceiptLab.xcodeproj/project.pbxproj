@@ -1,0 +1,237 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0000000000000000000000D0 = {isa = PBXBuildFile; fileRef = 00000000000000000000006C; };
+		0000000000000000000000CF = {isa = PBXBuildFile; fileRef = 00000000000000000000006B; };
+		0000000000000000000000C8 /* ../native-protocol/ProtectedNativeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000064 /* ../native-protocol/ProtectedNativeApp.swift */; };
+		0000000000000000000000C9 /* ../native-protocol/ProtectedReceiptDecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000065 /* ../native-protocol/ProtectedReceiptDecision.swift */; };
+		0000000000000000000000CA /* ../native-protocol/BrokerReview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000066 /* ../native-protocol/BrokerReview.swift */; };
+		0000000000000000000000CB /* ../touch-id/Sources/ApprovalProbe/ReviewBoundary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000067 /* ../touch-id/Sources/ApprovalProbe/ReviewBoundary.swift */; };
+		0000000000000000000000CC /* ../touch-id/Sources/ApprovalProbe/NativeReviewForm.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000068 /* ../touch-id/Sources/ApprovalProbe/NativeReviewForm.swift */; };
+		0000000000000000000000CD /* ../touch-id/Sources/ApprovalProbe/BiometricSigning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000069 /* ../touch-id/Sources/ApprovalProbe/BiometricSigning.swift */; };
+		0000000000000000000000CE /* ../touch-id/Sources/ApprovalProbe/Challenge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00000000000000000000006A /* ../touch-id/Sources/ApprovalProbe/Challenge.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		00000000000000000000006C = {isa = PBXFileReference; lastKnownFileType = image.icns; path = "../../assets/icon/sudo-relay.icns"; sourceTree = "<group>"; };
+		00000000000000000000006B = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../native-protocol/ReceiptSigningKeyStore.swift"; sourceTree = "<group>"; };
+		000000000000000000000008 /* ReceiptLab.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "sudo-relay.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		000000000000000000000064 /* ../native-protocol/ProtectedNativeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../native-protocol/ProtectedNativeApp.swift"; sourceTree = "<group>"; };
+		000000000000000000000065 /* ../native-protocol/ProtectedReceiptDecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../native-protocol/ProtectedReceiptDecision.swift"; sourceTree = "<group>"; };
+		000000000000000000000066 /* ../native-protocol/BrokerReview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../native-protocol/BrokerReview.swift"; sourceTree = "<group>"; };
+		000000000000000000000067 /* ../touch-id/Sources/ApprovalProbe/ReviewBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../touch-id/Sources/ApprovalProbe/ReviewBoundary.swift"; sourceTree = "<group>"; };
+		000000000000000000000068 /* ../touch-id/Sources/ApprovalProbe/NativeReviewForm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../touch-id/Sources/ApprovalProbe/NativeReviewForm.swift"; sourceTree = "<group>"; };
+		000000000000000000000069 /* ../touch-id/Sources/ApprovalProbe/BiometricSigning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../touch-id/Sources/ApprovalProbe/BiometricSigning.swift"; sourceTree = "<group>"; };
+		00000000000000000000006A /* ../touch-id/Sources/ApprovalProbe/Challenge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../touch-id/Sources/ApprovalProbe/Challenge.swift"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		000000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				00000000000000000000006C,
+				00000000000000000000006B,
+				000000000000000000000064 /* ../native-protocol/ProtectedNativeApp.swift */,
+				000000000000000000000065 /* ../native-protocol/ProtectedReceiptDecision.swift */,
+				000000000000000000000066 /* ../native-protocol/BrokerReview.swift */,
+				000000000000000000000067 /* ../touch-id/Sources/ApprovalProbe/ReviewBoundary.swift */,
+				000000000000000000000068 /* ../touch-id/Sources/ApprovalProbe/NativeReviewForm.swift */,
+				000000000000000000000069 /* ../touch-id/Sources/ApprovalProbe/BiometricSigning.swift */,
+				00000000000000000000006A /* ../touch-id/Sources/ApprovalProbe/Challenge.swift */,
+				000000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		000000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000008 /* ReceiptLab.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		000000000000000000000004 /* ReceiptLab */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 000000000000000000000006 /* Build configuration list for PBXNativeTarget "ReceiptLab" */;
+			buildPhases = (
+				000000000000000000000009,
+				000000000000000000000007 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ReceiptLab;
+			productName = ReceiptLab;
+			productReference = 000000000000000000000008 /* ReceiptLab.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		000000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 2720;
+			};
+			buildConfigurationList = 000000000000000000000005 /* Build configuration list for PBXProject "ReceiptLab" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 000000000000000000000002;
+			productRefGroup = 000000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				000000000000000000000004 /* ReceiptLab */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+        000000000000000000000009 = {
+            isa = PBXResourcesBuildPhase;
+            buildActionMask = 2147483647;
+            files = (0000000000000000000000D0,);
+            runOnlyForDeploymentPostprocessing = 0;
+        };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		000000000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0000000000000000000000CF,
+				0000000000000000000000C8 /* ../native-protocol/ProtectedNativeApp.swift in Sources */,
+				0000000000000000000000C9 /* ../native-protocol/ProtectedReceiptDecision.swift in Sources */,
+				0000000000000000000000CA /* ../native-protocol/BrokerReview.swift in Sources */,
+				0000000000000000000000CB /* ../touch-id/Sources/ApprovalProbe/ReviewBoundary.swift in Sources */,
+				0000000000000000000000CC /* ../touch-id/Sources/ApprovalProbe/NativeReviewForm.swift in Sources */,
+				0000000000000000000000CD /* ../touch-id/Sources/ApprovalProbe/BiometricSigning.swift in Sources */,
+				0000000000000000000000CE /* ../touch-id/Sources/ApprovalProbe/Challenge.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		00000000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		00000000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		00000000000000000000000C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
+				CODE_SIGN_ENTITLEMENTS = ReceiptLab.entitlements;
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_DEBUG_DYLIB = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "ReceiptLab-Info.plist";
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../../target/debug";
+				OTHER_LDFLAGS = (
+					"-lsudo_relay",
+					"-framework",
+					Security,
+					"-framework",
+					SystemConfiguration,
+					"-liconv",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.sudorelay.receiptlab.astra;
+				PRODUCT_NAME = "sudo-relay";
+				EXECUTABLE_NAME = ReceiptLab;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../native-protocol";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+			};
+			name = Debug;
+		};
+		00000000000000000000000D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
+				CODE_SIGN_ENTITLEMENTS = ReceiptLab.entitlements;
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_DEBUG_DYLIB = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "ReceiptLab-Info.plist";
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../../target/debug";
+				OTHER_LDFLAGS = (
+					"-lsudo_relay",
+					"-framework",
+					Security,
+					"-framework",
+					SystemConfiguration,
+					"-liconv",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.sudorelay.receiptlab.astra;
+				PRODUCT_NAME = "sudo-relay";
+				EXECUTABLE_NAME = ReceiptLab;
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../native-protocol";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		000000000000000000000005 /* Build configuration list for PBXProject "ReceiptLab" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				00000000000000000000000A /* Debug */,
+				00000000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		000000000000000000000006 /* Build configuration list for PBXNativeTarget "ReceiptLab" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				00000000000000000000000C /* Debug */,
+				00000000000000000000000D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 000000000000000000000001 /* Project object */;
+}

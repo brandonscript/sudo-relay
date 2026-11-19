@@ -1,0 +1,220 @@
+"""Temporary, ordinary-user XPC peer checks. No installation, credentials or command runner."""
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import plistlib
+import re
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import uuid
+
+SOURCE = Path(__file__).resolve().parent
+assert sys.argv[1:] in ([], ["--prepare-native"], ["--prepare-native-durable"]), "Use --prepare-native to retain a manual-test app"
+assert sys.platform == "darwin" and os.getuid() != 0, "Run as an ordinary macOS user"
+
+
+def run(*args: str, timeout: int = 60) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(args, text=True, capture_output=True, timeout=timeout)
+    if result.returncode:
+        raise RuntimeError(f"{args[0]} failed ({result.returncode}): {result.stderr}")
+    return result
+
+
+def write_plist(path: Path, value: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(plistlib.dumps(value))
+
+
+def cdhash(bundle: Path) -> str:
+    details = run("/usr/bin/codesign", "-d", "--verbose=4", str(bundle)).stderr
+    match = re.search(r"^CDHash=([a-f0-9]{40})$", details, re.MULTILINE)
+    assert match, "Missing code identity"
+    return match.group(1)
+
+
+def sign(bundle: Path) -> None:
+    args = ["/usr/bin/codesign", "--force", "--sign", "-", "--options", "runtime"]
+    run(*args, str(bundle))
+
+
+def vary(bundle: Path) -> None:
+    resource = bundle / "Contents/Resources/peer-test-variant.txt"
+    resource.parent.mkdir(parents=True, exist_ok=True)
+    resource.write_text("Different sealed resources; same bundle identifier.\n")
+    sign(bundle)
+
+
+with tempfile.TemporaryDirectory(prefix="sudo-relay-xpc-peer-") as scratch:
+    root = Path(scratch)
+    repo = SOURCE.parent.parent
+    run("cargo", "build", "--locked", "--manifest-path", str(repo / "Cargo.toml"),
+        "--features", "native-receipt-lab", "--lib", "--bin", "receipt-verifier")
+    original = root / "original" / "PeerLab.app"
+    helper_relative = Path("Contents/XPCServices/local.sudo-relay.peer-service.xpc")
+    helper = original / helper_relative
+    for bundle, role, identifier, kind in [
+        (helper, "Service", "local.sudo-relay.peer-service", "XPC!"),
+        (original, "Client", "local.sudo-relay.peer-client", "APPL"),
+    ]:
+        binary = bundle / "Contents/MacOS" / role
+        binary.parent.mkdir(parents=True)
+        extras = [str(SOURCE.parent / "native-protocol/ReceiptPipe.swift")] if role == "Service" else [
+            str(SOURCE.parent / "native-protocol/BrokerReview.swift"), str(SOURCE / "DurableClient.swift")]
+        run("/usr/bin/xcrun", "swiftc", "-swift-version", "6", "-parse-as-library", "-warnings-as-errors",
+            "-module-cache-path", str(root / "modules"), str(SOURCE / "Shared.swift"),
+            str(SOURCE.parent / "touch-id/Sources/ApprovalProbe/ReviewBoundary.swift"),
+            str(SOURCE / f"{role}.swift"), *extras,
+            "-I", str(SOURCE.parent / "native-protocol"), "-L", str(repo / "target/debug"), "-lsudo_relay",
+            "-framework", "Security", "-framework", "SystemConfiguration", "-liconv", "-o", str(binary))
+        if role == "Service":
+            child = bundle / "Contents/Helpers/receipt-verifier"
+            child.parent.mkdir(parents=True)
+            shutil.copy2(repo / "target/debug/receipt-verifier", child)
+            sign(child)
+        info: dict[str, object] = {"CFBundleExecutable": role, "CFBundleIdentifier": identifier,
+                                  "CFBundleName": role, "CFBundlePackageType": kind, "CFBundleVersion": "1",
+                                  "SudoRelayReceiptFixture": True}
+        if role == "Service":
+            info["XPCService"] = {"ServiceType": "Application"}
+        write_plist(bundle / "Contents/Info.plist", info)
+        sign(bundle)
+    native_binary = root / "NativeClient"
+    approval_sources = sorted((SOURCE.parent / "touch-id/Sources/ApprovalProbe").glob("*.swift"))
+    run("/usr/bin/xcrun", "swiftc", "-swift-version", "6", "-parse-as-library", "-warnings-as-errors",
+        "-module-cache-path", str(root / "modules"), str(SOURCE / "Shared.swift"),
+        *(str(path) for path in approval_sources), str(SOURCE / "NativeClient.swift"),
+        str(SOURCE / "NativeDurableFlow.swift"), str(SOURCE.parent / "native-protocol/BrokerReview.swift"),
+        "-I", str(SOURCE.parent / "native-protocol"), "-L", str(repo / "target/debug"), "-lsudo_relay",
+        "-framework", "Security", "-framework", "SystemConfiguration", "-liconv", "-o", str(native_binary))
+    original_client = cdhash(original)
+    original_service = cdhash(helper)
+    original_verifier = cdhash(helper / "Contents/Helpers/receipt-verifier")
+    results: list[dict[str, object]] = []
+    for case in ["allowed", "variant-client-allowed", "substituted-client", "variant-service-allowed",
+                 "substituted-service", "substituted-service-without-handshake", "signed-review", "signed-denied", "signed-reconnect", "durable-review", "durable-child-allowed", "durable-child-rejected", "durable-child-missing-pin", "signed-policy-client", "signed-policy-service", "signed-policy-verifier", "signed-policy-missing", "signed-policy-malformed", "durable-policy-revoked"]:
+        case_root = root / case
+        app = case_root / "PeerLab.app"
+        shutil.copytree(original, app)
+        service = app / helper_relative
+        if case in ["substituted-client", "variant-client-allowed"]:
+            vary(app)
+            assert cdhash(app) != original_client
+        if case.startswith("substituted-service") or case == "variant-service-allowed":
+            vary(service)
+            sign(app)
+            assert cdhash(service) != original_service
+        if case in ["durable-child-allowed", "durable-child-rejected"]:
+            child = service / "Contents/Helpers/receipt-verifier"
+            run("/usr/bin/codesign", "--force", "--sign", "-", "--options", "runtime",
+                "--identifier", "local.sudo-relay.changed-verifier", str(child))
+            assert cdhash(child) != original_verifier
+            sign(service)
+            sign(app)
+        run("/usr/bin/codesign", "--verify", "--deep", "--strict", str(app))
+        # Fixture-controlled pins outside the signed bundles avoid circular code hashes.
+        # This same-user file is NOT a protected production enrollment store.
+        client_pin = original_client if case == "substituted-client" else cdhash(app)
+        service_pin = original_service if case.startswith("substituted-service") else cdhash(service)
+        (case_root / "policy.json").write_text(json.dumps({
+            "client": f'identifier "local.sudo-relay.peer-client" and cdhash H"{client_pin}"',
+            "service": f'identifier "local.sudo-relay.peer-service" and cdhash H"{service_pin}"',
+            "verifier": f'cdhash H"{original_verifier if case == "durable-child-rejected" else cdhash(service / "Contents/Helpers/receipt-verifier")}"',
+        }))
+        if case == "durable-child-missing-pin":
+            policy = json.loads((case_root / "policy.json").read_text())
+            del policy["verifier"]
+            (case_root / "policy.json").write_text(json.dumps(policy))
+        characterization = case.endswith("without-handshake")
+        arguments = ["--characterize-without-handshake"] if characterization else []
+        if case in ["signed-review", "signed-denied", "signed-reconnect", "durable-review", "durable-child-allowed", "durable-child-rejected", "durable-child-missing-pin", "signed-policy-client", "signed-policy-service", "signed-policy-verifier", "signed-policy-missing", "signed-policy-malformed", "durable-policy-revoked"]:
+            run(str(app / "Contents/MacOS/Client"), "--fixture-key")
+            arguments = ["--durable-review" if case.startswith("durable-") and case != "durable-policy-revoked" else f"--{case}"]
+        if case.startswith("durable-"):
+            state = case_root / "state"
+            state.mkdir(mode=0o700)
+            (state / "keys").mkdir(mode=0o700)
+            key = state / "keys/native.pub"
+            key.write_text("p256-sha256:04" + (case_root / "fixture-public.key").read_bytes().hex())
+            key.chmod(0o600)
+            (case_root / "broker-config.json").write_text(json.dumps({
+                "machine_id": str(uuid.uuid4()), "agent_uid": os.getuid(), "approver_uid": os.getuid(),
+                "socket_gid": os.getgid(), "state_dir": str(state), "socket": str(case_root / "unused.sock"),
+            }))
+        result = subprocess.run([str(app / "Contents/MacOS/Client"), *arguments], text=True,
+                                capture_output=True, timeout=15)
+        events = [json.loads(line) for line in result.stdout.splitlines()]
+        receipt = case_root / "receipt.txt"
+        if case in ["durable-child-rejected", "durable-child-missing-pin"]:
+            assert result.returncode == 1 and len(events) == 1 and events[0]["event"] == "peer-rejected", (case, result)
+            assert not (case_root / "state/state.sqlite3").exists(), "rejected child must not start"
+            assert not (case_root / "must-not-exist").exists()
+        elif case == "durable-policy-revoked":
+            assert result.returncode == 0 and events == [{"event": "peer-verified"},
+                {"event": "durable-policy-revoked-zero-receipts-no-recovery"}], (case, result)
+            with sqlite3.connect(f"file:{case_root / 'state/state.sqlite3'}?mode=ro", uri=True) as db:
+                assert db.execute("SELECT state FROM requests").fetchall() == [("pending",)]
+                assert db.execute("SELECT count(*) FROM audit WHERE event='consumed'").fetchone() == (0,)
+            assert not receipt.exists() and not (case_root / "must-not-exist").exists()
+        elif case.startswith("signed-policy-"):
+            assert result.returncode == 0 and events == [{"event": "peer-verified"},
+                {"event": "policy-revoked-zero-receipts-no-recovery"}], (case, result)
+            assert not receipt.exists()
+        elif case in ["signed-review", "signed-denied", "signed-reconnect", "durable-review", "durable-child-allowed"]:
+            expected = {"signed-review": "signed-review-one-receipt-alteration-and-replay-rejected",
+                        "signed-denied": "signed-review-denied-zero-receipts",
+                        "signed-reconnect": "replacement-peer-verified-approved-replay-rejected",
+                        "durable-review": "durable-xpc-one-receipt-alteration-and-replay-rejected",
+                        "durable-child-allowed": "durable-xpc-one-receipt-alteration-and-replay-rejected"}[case]
+            assert result.returncode == 0 and events == [{"event": "peer-verified"},
+                {"event": expected}], (case, result)
+            assert not receipt.exists()
+            assert not (case_root / "must-not-exist").exists()
+        elif case.endswith("allowed"):
+            assert result.returncode == 0 and events == [{"event": "peer-verified"}, {"event": "receipt-received"}], (case, result)
+            assert receipt.read_text() == "peer-check-receipt-only\n"
+        else:
+            assert result.returncode == 1 and len(events) == 1 and events[0]["event"] == "peer-rejected", (case, result)
+            assert events[0]["domain"] == "NSCocoaErrorDomain", (case, events)
+            assert events[0]["code"] in (["4102"] if case.startswith("substituted-service") else ["4097", "4102"]), (case, events)
+            assert receipt.exists() == characterization, f"{case}: unexpected receipt state"
+        results.append({"case": case, "expectation_met": True, "known_unsafe_pattern": characterization,
+                        "receipt_count": 1 if case in ["signed-review", "signed-reconnect", "durable-review", "durable-child-allowed"] else int(receipt.exists()), "events": events})
+    native_app: str | None = None
+    if sys.argv[1:]:
+        packaged = run("/usr/bin/xcrun", "swift", "-module-cache-path", str(root / "modules"),
+                       str(SOURCE.parent / "touch-id/package-lab.swift"), str(native_binary))
+        app = Path(packaged.stdout.strip())
+        assert app.is_dir() and app.name == "sudo-relay.app"
+        shutil.copytree(helper, app / helper_relative)
+        info_path = app / "Contents/Info.plist"
+        info = plistlib.loads(info_path.read_bytes())
+        info["SudoRelayReceiptFixture"] = True
+        if sys.argv[1:] == ["--prepare-native-durable"]:
+            info["SudoRelayLabProtocol"] = "broker-cbor-v2"
+            state = app.parent / "state"
+            state.mkdir(mode=0o700)
+            (state / "keys").mkdir(mode=0o700)
+            (app.parent / "broker-config.json").write_text(json.dumps({
+                "machine_id": str(uuid.uuid4()), "agent_uid": os.getuid(), "approver_uid": os.getuid(),
+                "socket_gid": os.getgid(), "state_dir": str(state), "socket": str(app.parent / "unused.sock"),
+            }))
+        write_plist(info_path, info)
+        sign(app)
+        run("/usr/bin/codesign", "--verify", "--deep", "--strict", str(app))
+        (app.parent / "policy.json").write_text(json.dumps({
+            "client": f'identifier "local.sudo-relay.receipt-lab" and cdhash H"{cdhash(app)}"',
+            "service": f'identifier "local.sudo-relay.peer-service" and cdhash H"{cdhash(app / helper_relative)}"',
+            "verifier": f'cdhash H"{cdhash(app / helper_relative / "Contents/Helpers/receipt-verifier")}"',
+        }))
+        if sys.argv[1:] == ["--prepare-native-durable"]:
+            executable = app / "Contents/MacOS" / str(info["CFBundleExecutable"])
+            run(str(executable), "--enroll-receipt-key")
+            assert (app.parent / "native-key.json").is_file()
+        native_app = str(app)
+    print(json.dumps({"cases": results, "prepared_native_app": native_app, "uid": os.getuid(), "commands_executed": 0,
+                      "human_approval_tested": False, "protected_deployment_tested": False}, indent=2))

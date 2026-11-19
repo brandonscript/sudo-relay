@@ -103,3 +103,13 @@ The isolated [prototype and full test record](https://github.com/brandonscript/s
 The fixture had no host mounts, network or persistent runtime data; its container was removed after testing. Real setuid sudo was enabled only in this separate fixture. No host authentication files were changed. Observed policy queries took 3.5–6.5 ms; authentication/launch/exit samples took 5.7–16.3 ms, excluding signing/ticket preparation. These are local samples, not a benchmark for other systems.
 
 This establishes a Linux feasibility result, not production readiness. The experiment uses a root test controller and separate signer instead of the MCP broker/human host, a fixture-only JSON grant instead of the production CBOR protocol, and Linux `/proc` process binding. Authenticated installation, per-sudoer enrollment, real UI, macOS, existing PAM/MFA/cache/remote-policy coexistence, scripts and output sharing remain unintegrated. Existing NOPASSWD rules can skip PAM: production must enforce approval independently before every broker launch. Revocation follows sudo's normal policy-to-launch semantics, not stronger atomicity. The production alpha's sponsor-revocation gap remains open.
+
+## Configurable execution maximum
+
+November 10, 2026: two authorization-only Rust tests and six TypeScript adapter
+tests passed after adding `max_execution_secs`. Existing configurations default
+to 300 seconds; administrator limits and signed requests accept 1–86,400 seconds.
+Cases cover excessive requests, exact boundaries, changed-duration signatures,
+lowered policy before consumption, and approval expiry independent of runtime.
+No executor was called in these new checks. Strict TypeScript checking passed.
+Long-running process behavior and cleanup were not exercised by this increment.

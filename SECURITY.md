@@ -6,4 +6,4 @@ Report suspected vulnerabilities through [GitHub private vulnerability reporting
 
 Include the affected commit, a reproducible case using fake credentials, expected and observed behavior, and the operating system or container setup. Never include real signing keys or sensitive command output.
 
-The [security model](docs/security.md) and [README security status](README.md#security-status) describe intended protections and untested areas. Security fixes target the current experimental version. There is no promised response SLA.
+The [security model](docs/security.md) and [README disclaimer](README.md#disclaimer) describe intended protections and untested areas. Security fixes target the current experimental version. There is no promised response SLA.
