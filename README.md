@@ -1,5 +1,7 @@
 # sudo-relay
 
+<img src="assets/icon/preview.webp" alt="sudo-relay relay-arrow logo" width="96">
+
 ## What is this?
 
 Let an agent ask to run a specific command with elevated privileges. You see what it wants to run, where it will run, and which account it targets. You can approve that request once, deny it, or let it expire.

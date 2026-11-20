@@ -34,3 +34,9 @@ custom SVG now omits its two dots and connecting line; the outline is still our
 custom geometry, not the earlier system-symbol export. PNG and ICNS are rebuilt
 from it. Previously signed bundles remain unchanged; the new icon is for the next
 signed build.
+
+## November 20 — relay-arrow identity
+
+The owner selected concept 22 from the second pencil-sketch sheet and requested cleanup and app-icon exports. The new identity uses two offset forward arrows, with a short bent tail on the smaller arrow. A generated cleanup reference is retained alongside an editable vector redraw. The mark and dark tile are project artwork, with no Apple system-symbol export.
+
+The vector master, macOS ICNS, Linux hicolor SVG/PNG sizes, and review previews are under `assets/icon/`. The existing packagers continue reading the same master and ICNS paths. Source assets have been updated locally for review. Installed and previously signed apps have not been replaced or repinned. Linux desktop integration, live Dock rendering, and legal clearance remain unverified.
