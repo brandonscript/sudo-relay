@@ -2,7 +2,7 @@
 
 Concept 22, selected by the owner on November 20, 2026. Two offset forward arrows represent a handoff. The small arrow retains its bent tail, and the larger arrow completes the direction of travel.
 
-The selected pencil sketch was cleaned with image generation, then redrawn as two editable vector paths. `concept-22-cleanup.png` retains the generated cleanup reference. The vector master defines the final geometry.
+The selected pencil sketch was cleaned with image generation, then redrawn as two editable vector paths. `concept-22-cleanup.png` retains the generated cleanup reference. The vector master defines the final geometry. Both arrow tips share a horizontal centerline, and the upper and lower diagonal gaps are equal.
 
 | File | Use |
 |---|---|
