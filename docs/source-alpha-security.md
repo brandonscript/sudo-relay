@@ -2,9 +2,9 @@
 
 ## Security status
 
-We ran automated checks and reviewed the code locally. The project still needs an independent security audit and a full penetration test.
+Automated checks and local code review have been completed. The project still needs an independent security audit and a full penetration test.
 
-### What we have checked
+### Verified conditions
 
 - A production-mode Linux broker inside Docker, with separate agent and approver user IDs and throwaway keys. Tested agent operations could not read or open protected fixture files for writing, or approve their own requests.
 - Successful signed execution, rejection of replayed approvals, and rejection of attempts to substitute a command, argument, request ID or output-sharing choice. Positive controls confirm that valid approvals still work.
@@ -17,7 +17,7 @@ In a [live Codex test](mcp-host-boundary-results.md), the agent read private car
 
 A later [inline-only probe](mcp-host-boundary-results.md#inline-only-experiment--demonstrated-route-unavailable) removed expansion and was absent from that browser interface, while human approval still worked. That is evidence against the specific route tested, not a general human-only approval guarantee. Production behavior is unchanged.
 
-### What we have not established
+### Open questions
 
 This table lists open questions. Some have partial test coverage.
 

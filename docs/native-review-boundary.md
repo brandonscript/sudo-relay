@@ -71,7 +71,7 @@ For the stronger Mac option, the candidate deployment is a signed, hardened nati
 
 Apple documents enforcing [code-signing requirements on XPC peers](https://developer.apple.com/documentation/foundation/nsxpcconnection/setcodesigningrequirement(_:)) and [narrow identity requirements](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements/). These support the proposed deployment mechanism; they do not establish resistance to every accessibility, injection or display-spoofing route. Apple also documents [Secure Enclave key access controls](https://developer.apple.com/documentation/security/protecting-keys-with-the-secure-enclave). Signing identity, supported OS versions, entitlements, installation protection and actual peer-rejection tests remain unverified. No certificate or account provisioning was attempted.
 
-Passkeys remain optional. The session-only mode continues to attest an authenticated session, not independently verified human presence. It cannot inherit the Touch ID mode's assurance and must never be selected automatically after a failed biometric ceremony. If all review must stay inline, we still need a host-enforced protected confirmation channel; inline-only presentation metadata alone does not provide that guarantee.
+Passkeys remain optional. The session-only mode continues to attest an authenticated session, not independently verified human presence. It cannot inherit the Touch ID mode's assurance and must never be selected automatically after a failed biometric ceremony. If all review must stay inline, a host-enforced protected confirmation channel is still needed; inline-only presentation metadata alone does not provide that guarantee.
 
 ## Execution-timeout follow-up
 

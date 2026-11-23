@@ -5,13 +5,11 @@ It uses one automatically removed `/private/var/db/sr-receipt-<random>` director
 not the persistent helper locations below. The original proposal is retained as
 historical context and is not installation authorization.
 
-Prepared November 10, 2026. **For review, not installation approval.** The user
-selected this Mac for a narrowly scoped test. November 11 update: the app was signed
+Historical proposal, November 10–11, 2026. In the signing experiment, the app was signed
 with the authorized Personal Team and a disposable Keychain marker was created,
 tested and deleted. A separately signed substitute read it: see
 [the blocking result](protected-review-test-summary.md). No approval key, privileged
-installation or root launch has occurred. The original proposal below remains
-unapproved for installation; its preflight observations predate this experiment.
+installation or root launch has occurred. The preflight observations below predate this experiment; this is not a current installation guide.
 
 ## What you would be approving
 
@@ -75,8 +73,8 @@ No notarization or public distribution is proposed for this local trial.
 
 The signing key must not be usable by the agent to sign an impersonating app with
 the same Keychain entitlement. Root-owning the installed copy does not prevent
-that separate attack. We have **not** tested the current certificate's private-key
-access policy or used it for signing. This is a gate, not a cosmetic warning.
+that separate attack. The current certificate's private-key
+access policy and signing behavior remain untested at this checkpoint. This is a gate, not a cosmetic warning.
 
 Enrollment must run explicitly inside the authorized reviewer, create a new
 biometry-current-set key and expose only its public pin for administrator pairing.

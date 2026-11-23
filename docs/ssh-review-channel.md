@@ -3,8 +3,7 @@
 November 11, 2026. This is a transport checkpoint toward the Astra human-approval
 milestone, not completed Touch ID integration.
 
-The user confirmed Docker works on Astra. The intended trial keeps the native
-reviewer and Linux container on that Mac, using loopback. No Astra listener or
+The host/container trial uses a native reviewer and Linux container on the same Mac, connected through loopback. No Astra listener or
 host configuration has been installed by this checkpoint.
 
 ## What runs now

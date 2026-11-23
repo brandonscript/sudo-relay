@@ -1,6 +1,6 @@
 # Repeatable developer preview
 
-Status: developer-preview acceptance passed November 13; stop for review.
+Status: developer-preview acceptance passed November 13.
 Clean-VM installation/lifecycle checks and the actual client/native-review/sudo
 flow are verified below. This is fixed-command experimental evidence, not release
 readiness or an independent security audit.
@@ -61,7 +61,6 @@ or claim of production readiness is part of this preview milestone.
 
 Do not label this milestone complete because individual lab tests pass. The
 README procedure and actual MCP entry point must both be tested end to end.
-
 
 ## Implementation checkpoint
 

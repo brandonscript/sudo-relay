@@ -4,13 +4,13 @@ November 10, 2026. Research following the [live card failures](mcp-host-boundary
 
 No documented per-widget “human only” or “disable agent control” security flag was found in the reviewed MCP Apps stable/draft specifications, OpenAI UI reference, OpenAI extension specification or installed `@modelcontextprotocol/ext-apps` 2.0.4 types. This is a bounded documentation finding, not a claim about every private or future host feature. There are narrower controls and alternative interaction paths worth testing.
 
-## Controls we already use
+## Existing controls
 
-The probe declares `_meta.ui.visibility: ["app"]` on its receipt tool and keeps its capability in result `_meta`. That removes the direct model-facing route in our observed host, but the agent operated the authorized widget instead. The [MCP Apps stable specification](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx) scopes visibility to model/app access; it also explicitly depicts a user or agent interacting with a view.
+The probe declares `_meta.ui.visibility: ["app"]` on its receipt tool and keeps its capability in result `_meta`. That removes the direct model-facing route in the observed host, but the agent operated the authorized widget instead. The [MCP Apps stable specification](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx) scopes visibility to model/app access; it also explicitly depicts a user or agent interacting with a view.
 
-Iframe sandboxing and CSP restrict what the embedded app can do to its host and external origins. They do not promise that the host cannot inspect or operate that app. Our probe already uses empty external connection/resource domain lists. Adding more CSP restrictions cannot be presented as fixing the observed ordinary-button path.
+Iframe sandboxing and CSP restrict what the embedded app can do to its host and external origins. They do not promise that the host cannot inspect or operate that app. The probe uses empty external connection/resource domain lists. Adding more CSP restrictions cannot be presented as fixing the observed ordinary-button path.
 
-The [OpenAI UI reference](https://developers.openai.com/plugins/reference) documents private metadata, app-only tool visibility, compatibility fields such as `openai/widgetAccessible`, and tool annotations. Turning widget tool access off would also remove its normal approval call. `destructiveHint` communicates a tool's effects to the host; it is not a per-widget automation prohibition or a broker-verifiable human-presence assertion. A host-owned modal created with `requestModal` still contains our template; the API does not document protected human consent.
+The [OpenAI UI reference](https://developers.openai.com/plugins/reference) documents private metadata, app-only tool visibility, compatibility fields such as `openai/widgetAccessible`, and tool annotations. Turning widget tool access off would also remove its normal approval call. `destructiveHint` communicates a tool's effects to the host; it is not a per-widget automation prohibition or a broker-verifiable human-presence assertion. A host-owned modal created with `requestModal` still contains the application template; the API does not document protected human consent.
 
 ## Candidate 1: keep the card inline
 
@@ -27,15 +27,15 @@ The [OpenAI extension specification](https://github.com/openai/mcp-extensions/bl
 }
 ```
 
-The [MCP Apps draft](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/draft/apps.mdx#display-modes) also defines `appCapabilities.availableDisplayModes`; hosts must respect the declared modes. The installed SDK includes that capability. Our probe currently declares neither restriction.
+The [MCP Apps draft](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/draft/apps.mdx#display-modes) also defines `appCapabilities.availableDisplayModes`; hosts must respect the declared modes. The installed SDK includes that capability. At this checkpoint, the probe declares neither restriction.
 
-**Hypothesis:** inline-only presentation may remove the specific route we demonstrated, since the supported MCP Apps browser provider exposed expanded side-panel cards, not inline cards. This is a display control, not a documented security boundary. The host may expose inline cards through another interface or change behavior later. It does not protect against a client or local process that can obtain the approval capability independently.
+**Hypothesis:** inline-only presentation may remove the demonstrated route, since the supported MCP Apps browser provider exposed expanded side-panel cards, not inline cards. This is a display control, not a documented security boundary. The host may expose inline cards through another interface or change behavior later. It does not protect against a client or local process that can obtain the approval capability independently.
 
 Test with a separate receipt-only variant: declare inline-only in both the UI initialization and resource metadata, verify expansion is unavailable, inspect the enabled automation interfaces, attempt approval where supported, then require a successful human control. Repeat on desktop and mobile before making a compatibility claim. Do not infer security merely from an empty tab inventory.
 
 ## Candidate 2: let the host ask for confirmation
 
-MCP form elicitation asks the client to collect a structured response instead of giving our HTML widget an approval button. OpenAI documents [native extended forms](https://developers.openai.com/plugins/build/extensions#extended-forms); its extension specification lists desktop support, but not iOS/Android support for those extended forms. Direct connections and registered servers use different protocol flows, so capability negotiation matters.
+MCP form elicitation asks the client to collect a structured response instead of giving the HTML widget an approval button. OpenAI documents [native extended forms](https://developers.openai.com/plugins/build/extensions#extended-forms); its extension specification lists desktop support, but not iOS/Android support for those extended forms. Direct connections and registered servers use different protocol flows, so capability negotiation matters.
 
 This could preserve an in-chat interaction while moving the last confirmation outside the exposed iframe. It is a candidate, not established human authentication. The elicitation protocol leaves presentation to the client; a response saying `accept` alone does not prove that a person provided it.
 
@@ -51,7 +51,7 @@ It is not an all-inline UI flag, and this Codex build's support and enforcement 
 
 An event `isTrusted` check can reject some script-dispatched input. The [DOM standard](https://dom.spec.whatwg.org/#dom-event-istrusted) defines it as browser-originated versus script-dispatched, not human versus agent. The [WebDriver specification](https://www.w3.org/TR/webdriver/#actions) requires automation to dispatch trusted events. Therefore it cannot prove human presence.
 
-Our tested MCP Apps provider described its clicks as synthetic, so checking input/click/keyboard provenance is worth a disposable experiment. Checking only the form's submit event may miss browser-generated submission following another event. A client-side boolean sent to the server is not an attestation. Any such filter must preserve keyboard and assistive-technology use, and must not replace the approval boundary.
+The tested MCP Apps provider described its clicks as synthetic, so checking input/click/keyboard provenance is worth a disposable experiment. Checking only the form's submit event may miss browser-generated submission following another event. A client-side boolean sent to the server is not an attestation. Any such filter must preserve keyboard and assistive-technology use, and must not replace the approval boundary.
 
 ## Recommended order
 

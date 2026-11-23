@@ -12,15 +12,13 @@ Local verification on November 9, 2026. This is implementation evidence, not an 
 
 ## Review corrections
 
-A bounded Ponytail review found and fixed:
+Code review found and fixed:
 
 - A writable symlink path could initially resolve to a trusted executable and later switch to another one. Production now checks the original path's ancestors too; argv executable resolution is frozen before display and signing. Regression tests cover frozen resolution and the production protected-path rejection.
 - Escaped stdout/stderr could exceed the response limit. The bounded client response limit now accommodates the worst-case JSON encoding of both streams, and framing uses buffered reads with a wall-clock deadline.
 - Cancel/request loops could grow the root ledger indefinitely. New requests stop at 10,000 stored records, with administrator rotation documented.
 - Splitting UTF-8 across socket chunks could corrupt a pending request. The TypeScript client now decodes incrementally.
 - A second process could recover the first broker's live state. The state store is locked before startup recovery. Lock teardown explicitly unlocks before closing, so a concurrent fork inheriting the descriptor cannot cause a spurious restart lock failure.
-
-The documentation pass compared the owner's Shrinx/fixm4b README structure with this README, checked implemented CLI forms and service paths, separated installation from protocol internals, and removed claims of generic client support. Examples requiring administrative installation remain instructions rather than actions performed on the host.
 
 ## Not verified at initial review
 

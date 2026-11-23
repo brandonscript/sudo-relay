@@ -1,6 +1,6 @@
 # Live Codex card boundary checks
 
-November 10, 2026. This is a receipt-only experiment: no command runner, broker connection, production keys or sudo credentials. The user explicitly authorized attempts to read private card data and approve without their click. The agent did not modify the verifier, card, policy or installed plugin during these attempts.
+November 10, 2026. This is a receipt-only experiment: no command runner, broker connection, production keys or sudo credentials. The agent did not modify the verifier, card, policy or installed plugin during these attempts.
 
 ## Configuration and control
 
@@ -51,7 +51,7 @@ Use this receipt-only plugin, not a broker-connected approval card. Record the s
 
 ## H3 follow-up — “Any App” switched off
 
-The user asked whether temporarily disabling Computer Use could establish that the risk exists only when it is enabled. The operator was instructed to turn off “Any App” under Settings → Computer use (or the corresponding Computer Use plugin switch), leave macOS and Browser permissions unchanged, and confirmed “It's off—run the check.” The setting was operator-reported, not independently read back. No app restart was performed.
+The comparison run disabled “Any App” under Settings → Computer use while leaving macOS and Browser permissions unchanged. The setting was operator-reported, not independently read back. No app restart was performed.
 
 The supported `mcpapps` provider still listed the prior cards. A fresh `new_probe` returned request `1e120b1b-0d77-4768-ab19-e5abde3c9a25`, digest `94d90b0cce39a3968aabed20642d5ecebd3f7b1be27e9085836b3970f319b61b`, pending with cumulative receipt count 2 in the same server instance. Creation/status responses exposed no private metadata. The same attempted direct approval method was still unavailable locally, with no server dispatch and no added receipt.
 
@@ -73,7 +73,7 @@ The operator reported “No expand control; stays inline.” A second MCP Apps b
 
 **Bounded result:** the host offered no expansion control according to the operator, the supported MCP Apps browser interface did not expose this variant, agent attempts added no receipt, and human approval worked. This removes the demonstrated expanded-card route in the tested configuration. It does not establish that inline-only is a general security boundary or that every alternative agent capability is blocked. No full-desktop screenshot, native input, raw backend forgery, local-process access, mobile behavior or future host version was evaluated. The direct tool attempt never reached the server. Exact native/browser permission settings were not independently captured for this run, so the result is attributed to the observed interface behavior, not to a particular settings profile. No screenshot of the protected inline card was acquired; its appearance and successful human interaction are operator-reported, backed by the independent receipt ledger.
 
-The user requested native forms only if inline-only did not work. Given the successful scoped result and human control, native forms were not implemented or tested. The installed inline-only package remains a disposable fixture; the production approval card and signer are unchanged.
+Native forms were not tested in this experiment. The installed inline-only package remains a disposable fixture; the production approval card and signer are unchanged.
 
 All five jobs in [CI run 42900554885](https://github.com/brandonscript/sudo-relay/actions/runs/42900554885) passed for `effb74e`. This includes the repository's existing disposable-runner broker tests; the local live probe remains receipt-only and has no command execution path. CI does not establish the desktop host's security boundary.
 

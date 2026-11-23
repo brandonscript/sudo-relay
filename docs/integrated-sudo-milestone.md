@@ -1,7 +1,7 @@
 # Disposable Linux sudo integration
 
 November 11, 2026. Scope: connect real broker approval/consumption to native sudo
-inside a disposable container, document the evidence, then stop for review.
+inside a disposable container and record the evidence.
 No host sudo, PAM, signing-key or service configuration is changed.
 
 ## Acceptance and evidence
@@ -81,6 +81,6 @@ container inventory returned no remaining resources for this project. The image
 and build cache remain; they contain code, not the runtime signing keys or ledgers.
 No host sudo/PAM configuration was changed.
 
-**Bounded milestone complete; stop for review.** This is evidence for the test
+**Bounded milestone complete.** This is evidence for the test
 adapter, not permission to install the PAM prototype on Astra or another personal
 machine.

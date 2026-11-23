@@ -98,7 +98,7 @@ local success is not a hosted CI result.
 
 ## Final result
 
-**Passed locally; stopped for review.** The final Linux arm64 / Debian trixie
+**Passed locally.** The final Linux arm64 / Debian trixie
 run used sudo 1.9.16p2 and image
 `sha256:97556cacf9cff22bbcb7946f36d674c711d67663ec544d014ad01855928dd107`.
 

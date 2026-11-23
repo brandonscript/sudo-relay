@@ -7,7 +7,7 @@ or icon changes belong to this milestone.
 ## Current checkpoint
 
 November 11: Astra created and read back the protected test key with Touch ID.
-The user subsequently ran the administrator pairing/approval harness on Astra
+The administrator pairing/approval harness subsequently ran on Astra
 and reported success: each phase recorded one consumed receipt, verified the app
 acknowledgement and left the execution canary absent; temporary installation
 removal was reported. See [the hardware result](protected-review-test-summary.md).
@@ -17,7 +17,7 @@ See [the failure-case evidence](protected-review-test-summary.md). This establis
 those receipt-only paths for their pinned builds. The subsequent
 [lost-acknowledgement hardware case](protected-review-test-summary.md) also passed:
 one durable receipt, one submission, no app success acknowledgement and no
-execution. Stop for review of the evidence and remaining scope; this is not
+execution. This is not
 production-security certification.
 The historical blockers below describe the sequence of findings, not the current
 signing-account setup.
@@ -64,13 +64,6 @@ gap, not the broader signing-authority, protected enrollment or Touch ID gates.
 - The fixture has documented teardown. No personal-machine installation occurs
   until its concrete files, privileges and removal steps have been reviewed.
 
-## Stop point
-
-Stop once the checks above pass and present their evidence for review. If the
-required protected hardware environment or signing identity is unavailable, stop
-at that dependency with an explicit incomplete result; do not substitute an
-unprotected demo or unrelated backlog work.
-
 ## Starting evidence
 
 The headless Swift protected fetch/sign/submit path and independent broker passed
@@ -110,7 +103,7 @@ CI results must be recorded before these additions are counted as passing.
 
 Apple describes storing Secure Enclave encrypted key representations as Keychain
 generic-password items in [Storing CryptoKit keys](https://developer.apple.com/documentation/cryptokit/storing-cryptokit-keys-in-the-keychain).
-This is storage guidance, not evidence that our app's enrollment/access policy works.
+This is storage guidance, not evidence that the app's enrollment/access policy works.
 
 ## Final test prerequisites
 
@@ -124,8 +117,7 @@ Enrollment must explicitly create a biometric-current-set Secure Enclave key in
 the authorized reviewer and publish only its public key for administrator pairing.
 This app currently has no enrollment action; provisioning is unfinished. An
 existing test wrapped-key file must not be imported as a shortcut around those
-checks. The user selected preparation of a narrowly scoped install on this Mac for
-review. The [installation proposal](native-install-review.md) records the footprint
+checks. The [installation proposal](native-install-review.md) records the footprint
 and unresolved signing gates. Nothing has been installed or written to the
 personal Keychain by this milestone.
 
